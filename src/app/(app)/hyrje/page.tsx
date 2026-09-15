@@ -20,13 +20,13 @@ type Step = "product" | "form" | "review" | "done";
 type CostUnit = "kg" | "ton";
 
 interface Form {
-  orderNr: string; supplierId: string; loadType: LoadType;
+  orderNr: string; supplierId: string; entryDate: string; loadType: LoadType;
   countDoc: string; countActual: string; netKgDoc: string; netKgActual: string;
   lots: { lotNumber: string; qty: string }[];
   costUnit: CostUnit; costVal: string;
   dateMode: DateMode; prodFrom: string; prodTo: string; expFrom: string; expTo: string;
 }
-const emptyForm = (): Form => ({ orderNr: "", supplierId: "", loadType: "CARTON", countDoc: "", countActual: "", netKgDoc: "", netKgActual: "", lots: [{ lotNumber: "", qty: "" }], costUnit: "kg", costVal: "", dateMode: "FIXED", prodFrom: "", prodTo: "", expFrom: "", expTo: "" });
+const emptyForm = (): Form => ({ orderNr: "", supplierId: "", entryDate: TODAY, loadType: "CARTON", countDoc: "", countActual: "", netKgDoc: "", netKgActual: "", lots: [{ lotNumber: "", qty: "" }], costUnit: "kg", costVal: "", dateMode: "FIXED", prodFrom: "", prodTo: "", expFrom: "", expTo: "" });
 
 const fade = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.18 } };
 
@@ -58,7 +58,7 @@ export default function HyrjePage() {
     const x = d.data;
     setProduct(p); setDraftId(d.id);
     setForm({
-      orderNr: x.orderNr ?? "", supplierId: x.supplierId ?? "", loadType: x.loadType ?? "CARTON",
+      orderNr: x.orderNr ?? "", supplierId: x.supplierId ?? "", entryDate: x.entryDate ?? TODAY, loadType: x.loadType ?? "CARTON",
       countDoc: x.countDoc?.toString() ?? "", countActual: x.countActual?.toString() ?? "", netKgDoc: x.netKgDoc?.toString() ?? "", netKgActual: x.netKgActual?.toString() ?? "",
       lots: (x.lots?.length ? x.lots : [{ lotNumber: "", qty: 0 }]).map(l => ({ lotNumber: l.lotNumber, qty: l.qty ? String(l.qty) : "" })),
       costUnit: "kg", costVal: x.costPerKg?.toString() ?? "",
@@ -67,18 +67,18 @@ export default function HyrjePage() {
     setStep("form"); toast("Drafti u rikthye — vazhdo aty ku e le");
   };
   const toDraftData = () => ({
-    orderNr: form.orderNr, supplierId: form.supplierId, loadType: form.loadType,
+    orderNr: form.orderNr, supplierId: form.supplierId, entryDate: form.entryDate, loadType: form.loadType,
     countDoc: cntDoc, countActual: cntAct, netKgDoc: wDoc, netKgActual: wAct,
     lots: form.lots.filter(l => l.lotNumber).map(l => ({ lotNumber: l.lotNumber, qty: +l.qty || 0 })),
     costPerKg: perKg, totalCost: total, dateMode: form.dateMode,
     prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined,
   });
   const saveDraft = () => { if (!product) return; const d = store.saveDraft({ id: draftId ?? undefined, productId: product.id, data: toDraftData() }); setDraftId(d.id); toast.success("Drafti u ruajt"); setStep("product"); };
-  const canReview = form.orderNr && form.supplierId && cntAct > 0 && wAct > 0 && perKg > 0 && form.expFrom;
+  const canReview = form.orderNr && form.supplierId && form.entryDate && cntAct > 0 && wAct > 0 && perKg > 0 && form.expFrom;
   const finalize = () => {
     if (!product) return;
     const lots: LotAlloc[] = form.lots.filter(l => l.lotNumber).map(l => ({ lotNumber: l.lotNumber, qty: +l.qty || 0 }));
-    store.addShipment({ productId: product.id, supplierId: form.supplierId, orderNr: form.orderNr, loadType: form.loadType, countDoc: cntDoc, countActual: cntAct, netKgDoc: wDoc, netKgActual: wAct, lots, costPerKg: perKg, totalCost: total, dateMode: form.dateMode, prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined });
+    store.addShipment({ productId: product.id, supplierId: form.supplierId, orderNr: form.orderNr, entryDate: form.entryDate, loadType: form.loadType, countDoc: cntDoc, countActual: cntAct, netKgDoc: wDoc, netKgActual: wAct, lots, costPerKg: perKg, totalCost: total, dateMode: form.dateMode, prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined });
     if (draftId) store.deleteDraft(draftId);
     setSaved({ count: cntAct, kg: wAct, total }); setStep("done"); toast.success("Dërgesa u regjistrua");
   };
@@ -133,7 +133,11 @@ export default function HyrjePage() {
                   <SelectContent>{store.suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name} ({s.country})</SelectItem>)}<SelectItem value="__new">+ Furnizues i ri…</SelectItem></SelectContent>
                 </Select>
               </div>
-              <div><Label>Data e hyrjes</Label><div className="flex h-11 items-center gap-2 rounded-md bg-secondary px-3 text-sm text-muted-foreground"><CalendarCheck className="h-4 w-4 text-entry" />{fmtDate(TODAY)} · regjistrohet automatikisht</div></div>
+              <div>
+                <Label>Data e hyrjes <Req /></Label>
+                <Input type="date" value={form.entryDate} onChange={e => set({ entryDate: e.target.value })} />
+                <Hint>{form.entryDate === TODAY ? <><CalendarCheck className="mr-1 inline h-3 w-3 text-entry" />Plotësohet me datën e sotme — ndryshoje nëse ngarkesa ka mbërritur më parë.</> : <span className="text-warn"><CalendarCheck className="mr-1 inline h-3 w-3" />Datë e ndryshuar manualisht ({fmtDate(form.entryDate)}) — sot është {fmtDate(TODAY)}.</span>}</Hint>
+              </div>
             </div>
           </Section>
 
@@ -186,7 +190,7 @@ export default function HyrjePage() {
             <Button variant="warn" size="lg" onClick={saveDraft}><Save /> Ruaj si draft</Button>
             <Button variant="entry" size="lg" disabled={!canReview} onClick={() => setStep("review")}>Verifiko <ArrowRight /></Button>
           </div>
-          {!canReview && <p className="mt-2 text-xs text-muted-foreground">Për të verifikuar duhen: nr. porosie, furnizuesi, sasia dhe pesha faktike, kostoja dhe data e skadimit.</p>}
+          {!canReview && <p className="mt-2 text-xs text-muted-foreground">Për të verifikuar duhen: nr. porosie, furnizuesi, data e hyrjes, sasia dhe pesha faktike, kostoja dhe data e skadimit.</p>}
           <NewSupplierDialog open={newSup} onClose={() => setNewSup(false)} onCreate={s => { setNewSup(false); set({ supplierId: s.id }); }} />
         </motion.div>
       )}
@@ -201,9 +205,10 @@ export default function HyrjePage() {
           </div>
           <div className="grid gap-x-8 gap-y-1 rounded-lg border bg-card p-5 sm:grid-cols-2">
             <Row k="Produkti" v={product.name} /><Row k="Pesha neto" v={fmtKg(wAct)} />
-            <Row k="Nr. porosie" v={form.orderNr} /><Row k="Lotet" v={form.lots.filter(l => l.lotNumber).map(l => `${l.lotNumber} (${l.qty || 0})`).join(", ") || "—"} />
-            <Row k="Furnizuesi" v={supplier?.name ?? "—"} /><Row k="Kosto / kg" v={fmtNum(perKg, 2) + " Lek"} />
-            <Row k="Forma" v={form.loadType === "CARTON" ? "Kartona" : "Paleta"} /><Row k="Vlera totale" v={<span className="text-entry">{fmtLek(total)}</span>} />
+            <Row k="Data e hyrjes" v={<span className={form.entryDate !== TODAY ? "text-warn" : undefined}>{form.entryDate ? fmtDate(form.entryDate) : "—"}</span>} /><Row k="Lotet" v={form.lots.filter(l => l.lotNumber).map(l => `${l.lotNumber} (${l.qty || 0})`).join(", ") || "—"} />
+            <Row k="Nr. porosie" v={form.orderNr} /><Row k="Kosto / kg" v={fmtNum(perKg, 2) + " Lek"} />
+            <Row k="Furnizuesi" v={supplier?.name ?? "—"} /><Row k="Vlera totale" v={<span className="text-entry">{fmtLek(total)}</span>} />
+            <Row k="Forma" v={form.loadType === "CARTON" ? "Kartona" : "Paleta"} /><Row k="Prodhimi" v={form.prodFrom ? fmtDate(form.prodFrom) + (form.dateMode === "RANGE" && form.prodTo ? ` – ${fmtDate(form.prodTo)}` : "") : "—"} />
             <Row k="Sasia" v={`${cntAct} ${unit}`} /><Row k="Skadimi" v={form.expFrom ? fmtDate(form.expFrom) + (form.dateMode === "RANGE" ? " (më e hershmja)" : "") : "—"} />
           </div>
           <div className="mt-4 grid max-w-md grid-cols-2 gap-3"><Button variant="outline" size="lg" onClick={() => setStep("form")}>Kthehu & ndrysho</Button><Button variant="entry" size="lg" onClick={finalize}><Check /> Ruaj dërgesën</Button></div>

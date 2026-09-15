@@ -26,7 +26,7 @@ export interface Shipment {
   prodTo?: string;
   expFrom: string;        // ISO — earliest expiry drives alerts/FEFO
   expTo?: string;
-  entryDate: string;      // ISO, automatic
+  entryDate: string;      // ISO — prefilled with today, editable by the user
   soldKg: number;
   soldCount: number;
 }
@@ -35,7 +35,7 @@ export interface Draft {
   id: string;
   savedAt: string;
   productId: string;
-  data: Partial<Omit<Shipment, "id" | "soldKg" | "soldCount" | "entryDate">>;
+  data: Partial<Omit<Shipment, "id" | "soldKg" | "soldCount">>;
 }
 
 export interface SaleLine {

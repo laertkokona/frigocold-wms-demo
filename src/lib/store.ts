@@ -12,7 +12,7 @@ interface State {
   addProduct: (p: Omit<Product, "id">) => Product;
   addSupplier: (s: Omit<Supplier, "id">) => Supplier;
   addClient: (c: Omit<Client, "id">) => Client;
-  addShipment: (s: Omit<Shipment, "id" | "entryDate" | "soldKg" | "soldCount">) => Shipment;
+  addShipment: (s: Omit<Shipment, "id" | "soldKg" | "soldCount"> & { entryDate?: string }) => Shipment;
   saveDraft: (d: Omit<Draft, "savedAt" | "id"> & { id?: string }) => Draft;
   deleteDraft: (id: string) => void;
   finalizeSale: (s: Omit<Sale, "id" | "date">) => Sale;
@@ -41,7 +41,7 @@ export const useStore = create<State>()(
       addProduct: (p) => { const np = { ...p, id: "p-" + uid() }; set(s => ({ products: [...s.products, np] })); return np; },
       addSupplier: (sp) => { const ns = { ...sp, id: "s-" + uid() }; set(s => ({ suppliers: [...s.suppliers, ns] })); return ns; },
       addClient: (c) => { const nc = { ...c, id: "c-" + uid() }; set(s => ({ clients: [...s.clients, nc] })); return nc; },
-      addShipment: (sh) => { const ns: Shipment = { ...sh, id: "sh-" + uid(), entryDate: TODAY, soldKg: 0, soldCount: 0 }; set(s => ({ shipments: [...s.shipments, ns] })); return ns; },
+      addShipment: (sh) => { const ns: Shipment = { ...sh, id: "sh-" + uid(), entryDate: sh.entryDate || TODAY, soldKg: 0, soldCount: 0 }; set(s => ({ shipments: [...s.shipments, ns] })); return ns; },
       saveDraft: (d) => {
         const id = d.id ?? "d-" + uid();
         const nd: Draft = { id, productId: d.productId, data: d.data, savedAt: new Date().toISOString() };
