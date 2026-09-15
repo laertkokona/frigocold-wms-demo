@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    /* Cold navy base — a frozen warehouse, not a void */
+    --background: 222 32% 8%;
+    --foreground: 210 30% 94%;
+    --card: 222 28% 11%;
+    --card-foreground: 210 30% 94%;
+    --popover: 222 28% 11%;
+    --popover-foreground: 210 30% 94%;
+    --primary: 210 30% 94%;
+    --primary-foreground: 222 32% 8%;
+    --secondary: 222 24% 15%;
+    --secondary-foreground: 210 30% 94%;
+    --muted: 222 24% 15%;
+    --muted-foreground: 215 16% 62%;
+    --accent: 222 24% 17%;
+    --accent-foreground: 210 30% 94%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 22% 19%;
+    --input: 222 22% 19%;
+    --ring: 160 84% 45%;
+    --radius: 0.75rem;
+
+    /* Entry = ice green, Exit = cold blue */
+    --entry: 160 84% 45%;
+    --entry-foreground: 160 100% 8%;
+    --entry-soft: 160 60% 45%;
+    --exit: 217 91% 60%;
+    --exit-foreground: 0 0% 100%;
+    --exit-soft: 217 60% 55%;
+    --warn: 38 92% 55%;
+    --warn-soft: 38 70% 50%;
+    --danger: 0 72% 58%;
+    --danger-soft: 0 60% 55%;
+  }
+  * { @apply border-border; }
+  html { color-scheme: dark; }
+  body { @apply bg-background text-foreground antialiased; font-feature-settings: "tnum" 1, "cv11" 1; }
+  input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+  ::selection { background: hsl(var(--entry) / .35); }
+  :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+}
+
+@layer utilities {
+  .tabular { font-variant-numeric: tabular-nums; }
+  .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  body { background: #fff; color: #000; }
+  .no-print { display: none !important; }
+}
