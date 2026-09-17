@@ -12,6 +12,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/shell";
+import { SupplierDialog } from "@/components/entity-dialogs";
 import { remainingKg, useStore } from "@/lib/store";
 import type { DateMode, Draft, LoadType, LotAlloc, Product, WeightType } from "@/lib/types";
 import { cn, fmtDate, fmtKg, fmtLek, fmtNum, TODAY } from "@/lib/utils";
@@ -191,7 +192,7 @@ export default function HyrjePage() {
             <Button variant="entry" size="lg" disabled={!canReview} onClick={() => setStep("review")}>Verifiko <ArrowRight /></Button>
           </div>
           {!canReview && <p className="mt-2 text-xs text-muted-foreground">Për të verifikuar duhen: nr. porosie, furnizuesi, data e hyrjes, sasia dhe pesha faktike, kostoja dhe data e skadimit.</p>}
-          <NewSupplierDialog open={newSup} onClose={() => setNewSup(false)} onCreate={s => { setNewSup(false); set({ supplierId: s.id }); }} />
+          <SupplierDialog open={newSup} onClose={() => setNewSup(false)} onSaved={s => set({ supplierId: s.id })} />
         </motion.div>
       )}
 
@@ -260,21 +261,6 @@ function NewProductDialog({ open, onClose, onCreate }: { open: boolean; onClose:
           <div><Label>Lloji i peshës</Label><Segmented value={wt} onChange={setWt} options={[{ value: "VARIABLE", label: "Variabile" }, { value: "FIXED", label: "Fikse" }, { value: "PALLET", label: "Paleta" }]} /></div>
           {wt === "FIXED" && <div><Label>Pesha fikse për karton (kg)</Label><Input type="number" value={fixed} onChange={e => setFixed(e.target.value)} placeholder="p.sh. 10" /></div>}
           <Button variant="entry" className="w-full" disabled={!name.trim()} onClick={() => onCreate(add({ name: name.trim(), origin: origin || undefined, weightType: wt, fixedKg: wt === "FIXED" ? +fixed || undefined : undefined }))}>Krijo & vazhdo</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-function NewSupplierDialog({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (s: { id: string }) => void }) {
-  const add = useStore(s => s.addSupplier);
-  const [name, setName] = useState(""); const [country, setCountry] = useState("");
-  return (
-    <Dialog open={open} onOpenChange={o => !o && onClose()}>
-      <DialogContent><DialogTitle>Furnizues i ri</DialogTitle><DialogDescription>Shtoje në listën e furnizuesve.</DialogDescription>
-        <div className="mt-4 space-y-3">
-          <div><Label>Emri</Label><Input value={name} onChange={e => setName(e.target.value)} /></div>
-          <div><Label>Shteti</Label><Input value={country} onChange={e => setCountry(e.target.value)} /></div>
-          <Button variant="entry" className="w-full" disabled={!name.trim()} onClick={() => onCreate(add({ name: name.trim(), country }))}>Shto furnizuesin</Button>
         </div>
       </DialogContent>
     </Dialog>

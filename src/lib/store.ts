@@ -12,6 +12,8 @@ interface State {
   addProduct: (p: Omit<Product, "id">) => Product;
   addSupplier: (s: Omit<Supplier, "id">) => Supplier;
   addClient: (c: Omit<Client, "id">) => Client;
+  updateClient: (id: string, patch: Partial<Omit<Client, "id">>) => void;
+  updateSupplier: (id: string, patch: Partial<Omit<Supplier, "id">>) => void;
   addShipment: (s: Omit<Shipment, "id" | "soldKg" | "soldCount"> & { entryDate?: string }) => Shipment;
   saveDraft: (d: Omit<Draft, "savedAt" | "id"> & { id?: string }) => Draft;
   deleteDraft: (id: string) => void;
@@ -41,6 +43,8 @@ export const useStore = create<State>()(
       addProduct: (p) => { const np = { ...p, id: "p-" + uid() }; set(s => ({ products: [...s.products, np] })); return np; },
       addSupplier: (sp) => { const ns = { ...sp, id: "s-" + uid() }; set(s => ({ suppliers: [...s.suppliers, ns] })); return ns; },
       addClient: (c) => { const nc = { ...c, id: "c-" + uid() }; set(s => ({ clients: [...s.clients, nc] })); return nc; },
+      updateClient: (id, patch) => set(s => ({ clients: s.clients.map(c => c.id === id ? { ...c, ...patch } : c) })),
+      updateSupplier: (id, patch) => set(s => ({ suppliers: s.suppliers.map(x => x.id === id ? { ...x, ...patch } : x) })),
       addShipment: (sh) => { const ns: Shipment = { ...sh, id: "sh-" + uid(), entryDate: sh.entryDate || TODAY, soldKg: 0, soldCount: 0 }; set(s => ({ shipments: [...s.shipments, ns] })); return ns; },
       saveDraft: (d) => {
         const id = d.id ?? "d-" + uid();

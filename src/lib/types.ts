@@ -4,7 +4,7 @@ export type DateMode = "FIXED" | "RANGE";
 export type SaleMethod = "FIXED" | "VARIABLE" | "PALLET";
 
 export interface Product { id: string; name: string; weightType: WeightType; fixedKg?: number; origin?: string; }
-export interface Supplier { id: string; name: string; country: string; }
+export interface Supplier { id: string; name: string; country: string; contact?: string; phone?: string; }
 export interface Client { id: string; name: string; city: string; contact?: string; phone?: string; }
 export interface LotAlloc { lotNumber: string; qty: number; }
 

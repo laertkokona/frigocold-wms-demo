@@ -1,31 +1,39 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Pencil, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/shell";
+import { ClientDialog } from "@/components/entity-dialogs";
 import { useStore } from "@/lib/store";
 import { clientStats } from "@/lib/calc";
+import type { Client } from "@/lib/types";
 import { fmtDate, fmtKg, fmtLek } from "@/lib/utils";
-import { toast } from "sonner";
 
 export default function Klientet() {
-  const { clients, sales, addClient } = useStore();
-  const cs = clientStats(clients, sales).sort((a, b) => b.valueAll - a.valueAll);
-  const [open, setOpen] = useState(false); const [name, setName] = useState(""); const [city, setCity] = useState(""); const [contact, setContact] = useState("");
+  const { clients, sales } = useStore();
+  const [q, setQ] = useState("");
+  const [dialog, setDialog] = useState<{ open: boolean; client?: Client }>({ open: false });
+  const cs = clientStats(clients, sales).sort((a, b) => b.valueAll - a.valueAll)
+    .filter(c => !q || [c.client.name, c.client.city, c.client.contact].join(" ").toLowerCase().includes(q.toLowerCase()));
   return (
     <>
-      <PageHeader title="Klientët" sub={`${clients.length} klientë`} right={<Button variant="outline" onClick={() => setOpen(true)}><Plus /> Klient i ri</Button>} />
+      <PageHeader title="Klientët" sub={`${clients.length} klientë`} right={<Button variant="outline" onClick={() => setDialog({ open: true })}><Plus /> Klient i ri</Button>} />
+      <div className="relative mb-3"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Kërko klientin…" value={q} onChange={e => setQ(e.target.value)} className="pl-9" /></div>
       <div className="space-y-1.5">
-        {cs.map(c => <Link key={c.client.id} href={`/klientet/${c.client.id}`} className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 text-sm transition-colors hover:bg-accent/40"><div><div className="font-medium">{c.client.name}</div><div className="text-xs text-muted-foreground">{c.client.city} · {c.orders} porosi{c.last ? ` · e fundit ${fmtDate(c.last)}` : ""}</div></div><div className="flex items-center gap-3"><div className="text-right tabular"><div className="font-medium">{fmtLek(c.valueAll)}</div><div className="text-xs text-muted-foreground">{fmtKg(c.kgAll, 0)}</div></div><ChevronRight className="h-4 w-4 text-muted-foreground" /></div></Link>)}
+        {cs.map(c => (
+          <div key={c.client.id} className="flex items-center gap-2 rounded-lg border bg-card pr-2 text-sm transition-colors hover:bg-accent/40">
+            <Link href={`/klientet/${c.client.id}`} className="flex flex-1 items-center justify-between px-4 py-3">
+              <div><div className="font-medium">{c.client.name}</div><div className="text-xs text-muted-foreground">{c.client.city}{c.client.phone ? ` · ${c.client.phone}` : ""} · {c.orders} porosi{c.last ? ` · e fundit ${fmtDate(c.last)}` : ""}</div></div>
+              <div className="flex items-center gap-3"><div className="text-right tabular"><div className="font-medium">{fmtLek(c.valueAll)}</div><div className="text-xs text-muted-foreground">{fmtKg(c.kgAll, 0)}</div></div><ChevronRight className="h-4 w-4 text-muted-foreground" /></div>
+            </Link>
+            <Button variant="ghost" size="icon" aria-label={`Ndrysho ${c.client.name}`} onClick={() => setDialog({ open: true, client: c.client })}><Pencil className="h-4 w-4" /></Button>
+          </div>
+        ))}
+        {!cs.length && <p className="py-10 text-center text-sm text-muted-foreground">Asnjë klient nuk përputhet.</p>}
       </div>
-      <Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogTitle>Klient i ri</DialogTitle><DialogDescription>Shtoje në listën e klientëve.</DialogDescription>
-        <div className="mt-4 space-y-3"><div><Label>Emri</Label><Input value={name} onChange={e => setName(e.target.value)} /></div><div><Label>Qyteti</Label><Input value={city} onChange={e => setCity(e.target.value)} /></div><div><Label>Personi i kontaktit</Label><Input value={contact} onChange={e => setContact(e.target.value)} /></div>
-          <Button className="w-full" disabled={!name.trim()} onClick={() => { addClient({ name: name.trim(), city, contact: contact || undefined }); setOpen(false); setName(""); setCity(""); setContact(""); toast.success("Klienti u shtua"); }}>Shto klientin</Button></div>
-      </DialogContent></Dialog>
+      <ClientDialog open={dialog.open} client={dialog.client} onClose={() => setDialog({ open: false })} />
     </>
   );
 }

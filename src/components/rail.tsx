@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, Calculator, LayoutDashboard, LogOut, PackageMinus, PackagePlus, Search, Settings, Snowflake, Users, Warehouse, ListOrdered } from "lucide-react";
+import { Bell, Calculator, LayoutDashboard, LogOut, PackageMinus, PackagePlus, Search, Settings, Snowflake, Truck, Users, Warehouse, ListOrdered } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/lib/store";
 import { computeAlerts } from "@/lib/calc";
@@ -13,6 +13,7 @@ const items = [
   { href: "/inventari", label: "Stoku", icon: Warehouse },
   { href: "/kontabiliteti", label: "Financa", icon: Calculator },
   { href: "/klientet", label: "Klientët", icon: Users },
+  { href: "/furnizuesit", label: "Furnizues", icon: Truck },
   { href: "/levizjet", label: "Lëvizjet", icon: ListOrdered },
   { href: "/kerko", label: "Kërko", icon: Search },
   { href: "/alarmet", label: "Alarme", icon: Bell },
