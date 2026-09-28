@@ -17,7 +17,7 @@ export default function ShipmentDetail() {
   if (!s) return <p className="text-muted-foreground">Dërgesa nuk u gjet.</p>;
   const p = products.find(x => x.id === s.productId); const sup = suppliers.find(x => x.id === s.supplierId);
   const d = daysUntil(s.expFrom); const unit = s.loadType === "PALLET" ? "paleta" : "kartona";
-  const out = sales.flatMap(sl => sl.lines.filter(l => l.shipmentId === s.id).map(l => ({ ...l, date: sl.date, client: clients.find(c => c.id === sl.clientId)?.name ?? "—" })));
+  const out = sales.flatMap(sl => sl.lines.filter(l => l.shipmentId === s.id).map(l => ({ ...l, date: sl.date, client: clients.find(c => c.id === sl.clientId)?.name ?? "—" }))).sort((a, b) => b.date.localeCompare(a.date));
   const revenue = out.reduce((a, l) => a + l.total, 0), soldCost = s.soldKg * s.costPerKg;
   const Row = ({ k, v }: { k: string; v: React.ReactNode }) => <div className="flex justify-between border-b py-2 text-sm last:border-0"><span className="text-muted-foreground">{k}</span><span className="font-medium tabular">{v}</span></div>;
   return (

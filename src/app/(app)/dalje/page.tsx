@@ -207,19 +207,26 @@ export default function DaljePage() {
           </div>
         </motion.div>); })()}
 
-      {step === "total" && product && ship && (() => { const n = +totN || 0, kg = +totKg || 0, unit = unitOf(ship), overN = n > remainingCount(ship), overKg = kg > remainingKg(ship) + 0.001, whole = Number.isInteger(n); return (
+      {step === "total" && product && ship && (() => {
+        const n = Number(totN), kg = Number(totKg), unit = unitOf(ship);
+        const validN = Number.isSafeInteger(n) && n > 0;
+        const validKg = /^(?:\d+(?:\.\d{1,3})?|\.\d{1,3})$/.test(totKg) && Number.isFinite(kg) && kg > 0;
+        const overN = n > remainingCount(ship), overKg = kg > remainingKg(ship);
+        return (
         <motion.div key="total" {...fade}>
           <PageHeader title={`Totali nga fatura — ${product.name}`} sub={`Lot ${lotOf(ship)}`} right={<Button variant="ghost" onClick={() => setStep("method")}><ArrowLeft /></Button>} />
           <div className="max-w-md rounded-lg border bg-card p-5">
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Numri i {unit === "paleta" ? "paletave" : "kartonave"}</Label><Input type="number" inputMode="numeric" step="1" min="1" autoFocus value={totN} onChange={e => setTotN(e.target.value)} className="h-14 text-center text-xl font-semibold" placeholder="0" /></div>
-              <div><Label>Pesha totale (kg)</Label><Input type="number" inputMode="decimal" step="0.001" min="0" value={totKg} onChange={e => setTotKg(e.target.value)} className="h-14 text-center text-xl font-semibold" placeholder="0.00" /></div>
+              <div><Label>Pesha totale (kg)</Label><Input type="number" inputMode="decimal" step="0.001" min="0.001" value={totKg} onChange={e => setTotKg(e.target.value)} className="h-14 text-center text-xl font-semibold" placeholder="0.000" /></div>
             </div>
-            <div className="mt-4 flex items-center justify-center gap-4 rounded-md bg-secondary p-4 tabular"><Big v={kg.toFixed(2)} l="kg total" accent /><span className="text-muted-foreground">÷</span><Big v={String(n)} l={unit} /><span className="text-muted-foreground">=</span><Big v={n ? (kg / n).toFixed(2) : "—"} l={unit === "paleta" ? "kg / paletë (mes.)" : "kg / karton (mes.)"} /></div>
+            {totN && !validN && <p className="mt-2 text-xs text-danger">Numri duhet të jetë një numër i plotë pozitiv.</p>}
+            {totKg && !validKg && <p className="mt-2 text-xs text-danger">Pesha duhet të jetë pozitive, me maksimum 3 shifra pas presjes.</p>}
+            <div className="mt-4 flex items-center justify-center gap-4 rounded-md bg-secondary p-4 tabular"><Big v={Number.isFinite(kg) ? kg.toFixed(3) : "—"} l="kg total" accent /><span className="text-muted-foreground">÷</span><Big v={String(n)} l={unit} /><span className="text-muted-foreground">=</span><Big v={validN && Number.isFinite(kg) ? (kg / n).toFixed(2) : "—"} l={unit === "paleta" ? "kg / paletë (mes.)" : "kg / karton (mes.)"} /></div>
             <div className={cn("mt-3 flex justify-between rounded-md px-3 py-2 text-xs", overN ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{overN ? `Më shumë ${unit} se stoku i lotit!` : `${unit === "paleta" ? "Paleta" : "Kartona"} në stok te ky lot`}</span><span>{n} / {remainingCount(ship)}</span></div>
-            <div className={cn("mt-1.5 flex justify-between rounded-md px-3 py-2 text-xs", overKg ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{overKg ? "Më shumë kg se stoku i lotit!" : "Kg në stok te ky lot"}</span><span className="tabular">{fmtNum(kg, 2)} / {fmtNum(remainingKg(ship), 2)}</span></div>
+            <div className={cn("mt-1.5 flex justify-between rounded-md px-3 py-2 text-xs", overKg ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{overKg ? "Më shumë kg se stoku i lotit!" : "Kg në stok te ky lot"}</span><span className="tabular">{Number.isFinite(kg) ? fmtNum(kg, 3) : "—"} / {fmtNum(remainingKg(ship), 3)}</span></div>
             <p className="mt-3 text-xs text-muted-foreground">Shkruaj shifrat siç janë në faturë. Stoku zbritet me peshën totale; peshat e secilit {unit === "paleta" ? "paletë" : "karton"} nuk ruhen.</p>
-            <Button variant="exit" size="lg" className="mt-4 w-full" disabled={!n || !kg || !whole || overN || overKg} onClick={() => openPrice(kg, n)}>Vazhdo te çmimi <ArrowRight /></Button>
+            <Button variant="exit" size="lg" className="mt-4 w-full" disabled={!validN || !validKg || overN || overKg} onClick={() => openPrice(kg, n)}>Vazhdo te çmimi <ArrowRight /></Button>
           </div>
         </motion.div>); })()}
 
