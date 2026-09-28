@@ -1,40 +1,27 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ArrowDownRight, ArrowUpRight, Download, Info } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Banner } from "@/components/ui/banner";
 import { Segmented } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Bar, LineChart } from "@/components/ui/chart";
 import { PageHeader } from "@/components/shell";
-import { useStore } from "@/lib/store";
-import {
-  buildPeriod, capitalAtRisk, clientRows, headline, lotRows, monthlyEcon, priceDispersion, priceSeries,
-  productRows, supplierRows, trailingMonths, type PeriodKey,
-} from "@/lib/accounting";
+import { useServerReport } from "@/lib/use-server-report";
+import type { AccountingReport } from "@/lib/server/accounting-report";
+import type { PeriodKey } from "@/lib/accounting";
 import { cn, fmtDate, fmtKg, fmtLek, fmtNum } from "@/lib/utils";
 
 export default function Kontabiliteti() {
-  const { sales, shipments, products, clients, suppliers, thresholds } = useStore();
   const [pk, setPk] = useState<PeriodKey>("month");
-  const p = useMemo(() => buildPeriod(pk), [pk]);
-  const cur = useMemo(() => headline(sales, shipments, p.from, p.to), [sales, shipments, p]);
-  const prev = useMemo(() => headline(sales, shipments, p.prevFrom, p.prevTo), [sales, shipments, p]);
-  const months = useMemo(() => trailingMonths(8), []);
-  const series = useMemo(() => monthlyEcon(sales, shipments, months), [sales, shipments, months]);
-  const prods = useMemo(() => productRows(products, sales, shipments, p), [products, sales, shipments, p]);
-  const clis = useMemo(() => clientRows(clients, sales, shipments, p), [clients, sales, shipments, p]);
-  const sups = useMemo(() => supplierRows(suppliers, shipments, sales, p), [suppliers, shipments, sales, p]);
-  const lots = useMemo(() => lotRows(shipments, products, suppliers, sales), [shipments, products, suppliers, sales]);
-  const risk = useMemo(() => capitalAtRisk(shipments, thresholds), [shipments, thresholds]);
-
-  const [priceProd, setPriceProd] = useState(products[0]?.id ?? "");
-  const pSeries = useMemo(() => priceSeries(priceProd, sales, shipments, months), [priceProd, sales, shipments, months]);
-  const disp = useMemo(() => priceDispersion(priceProd, clients, sales, p), [priceProd, clients, sales, p]);
+  const [priceProd, setPriceProd] = useState("");
+  const [lotPage, setLotPage] = useState(1);
+  const report = useServerReport<AccountingReport>(`/api/accounting?period=${pk}&product=${priceProd}&lotPage=${lotPage}`);
+  if (!report.data) return <div className="rounded-lg border p-6">{report.error ? <>Raporti nuk u ngarkua. <button className="underline" onClick={report.refresh}>Provo sërish</button></> : "Po ngarkohet…"}</div>;
+  const { p, cur, prev, series, prods, clis, sups, lots, risk, thresholds, products, pSeries, disp, activeLotCount, realizedProfit, lotsTotal, lotPageSize } = report.data;
 
   const maxRev = Math.max(1, ...series.map(s => s.revenue));
   const exportCsv = () => {
@@ -169,7 +156,7 @@ export default function Kontabiliteti() {
         {/* PRICES */}
         <TabsContent value="price">
           <div className="mb-4 max-w-xs">
-            <Select value={priceProd} onValueChange={setPriceProd}><SelectTrigger><SelectValue placeholder="Zgjidh produktin" /></SelectTrigger>
+            <Select value={priceProd || report.data.priceProd} onValueChange={setPriceProd}><SelectTrigger><SelectValue placeholder="Zgjidh produktin" /></SelectTrigger>
               <SelectContent>{products.map(pr => <SelectItem key={pr.id} value={pr.id}>{pr.name}</SelectItem>)}</SelectContent></Select>
           </div>
           <Card><CardHeader><CardTitle>Çmimi i shitjes kundrejt kostos</CardTitle><CardDescription>Mesatare për kg sipas muajve · hapësira mes vijave është marzhi</CardDescription></CardHeader><CardContent>
@@ -231,16 +218,16 @@ export default function Kontabiliteti() {
                 </tr>))}</tbody>
             </table></div>
             {!sups.length && <Empty />}
-            <p className="px-4 pt-3 text-xs text-muted-foreground"><Info className="mr-1 inline h-3 w-3" />"Mungesë peshe" është diferenca mes peshës në dokument dhe asaj të shkarkuar faktikisht, e shprehur edhe në Lek — një mungesë e vogël por e përsëritur ka kosto reale.</p>
+            <p className="px-4 pt-3 text-xs text-muted-foreground"><Info className="mr-1 inline h-3 w-3" />&quot;Mungesë peshe&quot; është diferenca mes peshës në dokument dhe asaj të shkarkuar faktikisht, e shprehur edhe në Lek — një mungesë e vogël por e përsëritur ka kosto reale.</p>
           </CardContent></Card>
         </TabsContent>
 
         {/* LOTS */}
         <TabsContent value="lot">
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
-            <Kpi label="Kapital në stok" value={fmtLek(cur.inventoryValue)} sub={`${lots.filter(l => l.remainKg > 0).length} lote aktive`} />
+            <Kpi label="Kapital në stok" value={fmtLek(cur.inventoryValue)} sub={`${activeLotCount} lote aktive`} />
             <Kpi label="Kapital në rrezik skadimi" value={fmtLek(risk.value)} sub={`${risk.lots} lote brenda ${thresholds.expiryDays} ditëve`} tone={risk.value > 0 ? "warn" : undefined} />
-            <Kpi label="Fitim i realizuar (gjithçka)" value={fmtLek(lots.reduce((a, l) => a + l.realised, 0))} sub="nga lotet e shitura deri tani" tone="entry" />
+            <Kpi label="Fitim i realizuar (gjithçka)" value={fmtLek(realizedProfit)} sub="nga lotet e shitura deri tani" tone="entry" />
           </div>
           <Card><CardHeader><CardTitle>Pasqyra e loteve</CardTitle><CardDescription>Çdo blerje si njësi më vete — a doli e mirë?</CardDescription></CardHeader><CardContent className="px-0">
             <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -258,6 +245,7 @@ export default function Kontabiliteti() {
                   <Td>{l.remainKg > 0 ? <span className={cn(l.expDays <= thresholds.expiryDays && "text-warn")}>{l.daysHeld}d{l.expDays <= thresholds.expiryDays ? ` · skadon ${l.expDays}d` : ""}</span> : <span className="text-muted-foreground">—</span>}</Td>
                 </tr>))}</tbody>
             </table></div>
+            <div className="flex items-center justify-end gap-3 px-4 py-3 text-sm"><span>{lotsTotal} lote · faqja {lotPage} / {Math.max(1, Math.ceil(lotsTotal / lotPageSize))}</span><Button variant="outline" size="sm" disabled={lotPage <= 1} onClick={() => setLotPage(n => n - 1)}>Mbrapa</Button><Button variant="outline" size="sm" disabled={lotPage * lotPageSize >= lotsTotal} onClick={() => setLotPage(n => n + 1)}>Para</Button></div>
           </CardContent></Card>
         </TabsContent>
       </Tabs>

@@ -13,11 +13,12 @@ import { PageHeader } from "@/components/shell";
 import { remainingCount, remainingKg, useStore } from "@/lib/store";
 import { fefoOrder } from "@/lib/calc";
 import type { Product, SaleLine, SaleMethod, Shipment } from "@/lib/types";
-import { cn, daysUntil, fmtDate, fmtKg, fmtLek, fmtMonth, fmtNum } from "@/lib/utils";
+import { cn, daysUntil, fmtDate, fmtKg, fmtLek, fmtMonth, fmtNum, todayInTirane } from "@/lib/utils";
 
 type Step = "order" | "product" | "shipment" | "method" | "fixed" | "format" | "keypad" | "pallet" | "price" | "client" | "done";
 const fade = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.18 } };
 const FORMATS = [{ i: 2, d: 2, ex: "24.55", type: "2455" }, { i: 2, d: 3, ex: "19.877", type: "19877" }, { i: 2, d: 1, ex: "20.4", type: "204" }, { i: 3, d: 2, ex: "118.40", type: "11840" }];
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 
 export default function DaljePage() {
   const store = useStore();
@@ -33,6 +34,7 @@ export default function DaljePage() {
   const [clientId, setClientId] = useState("");
   const [lineKg, setLineKg] = useState(0); const [lineQty, setLineQty] = useState(0);
   const [doneSale, setDoneSale] = useState<{ id: string; totalKg: number; totalValue: number } | null>(null);
+  const requestId = useRef<string | null>(null);
 
   const totalKg = lines.reduce((a, l) => a + l.kg, 0), totalVal = lines.reduce((a, l) => a + l.total, 0);
   const pname = (id: string) => store.products.find(p => p.id === id)?.name ?? id;
@@ -43,7 +45,7 @@ export default function DaljePage() {
   const commit = (b = buf) => { if (!b) return; const p = b.padStart(need, "0"); setWeights(w => [...w, parseFloat(p.slice(0, fmt.i) + "." + p.slice(fmt.i))]); setBuf(""); };
   const press = (d: string) => { if (buf.length >= need) return; const nb = buf + d; setBuf(nb); if (nb.length === need) setTimeout(() => commit(nb), 110); };
   const gridRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { gridRef.current && (gridRef.current.scrollTop = gridRef.current.scrollHeight); }, [weights]);
+  useEffect(() => { if (gridRef.current) gridRef.current.scrollTop = gridRef.current.scrollHeight; }, [weights]);
   useEffect(() => {
     if (step !== "keypad") return;
     const h = (e: KeyboardEvent) => { if (e.key >= "0" && e.key <= "9") { e.preventDefault(); press(e.key); } else if (e.key === "Backspace") { e.preventDefault(); setBuf(b => b.slice(0, -1)); } else if (e.key === "Enter") { e.preventDefault(); commit(); } };
@@ -55,21 +57,25 @@ export default function DaljePage() {
   const openPrice = (kg: number, qty: number) => { setLineKg(kg); setLineQty(qty); setPrice(""); setStep("price"); };
   const addLine = () => {
     if (!product || !ship) return; const p = +price || 0;
-    setLines(ls => [...ls, { productId: product.id, shipmentId: ship.id, method, qty: lineQty, kg: +lineKg.toFixed(2), pricePerKg: p, total: lineKg * p, weights: method === "VARIABLE" ? weights : method === "PALLET" ? pallets.map(Number) : undefined, fixedKg: method === "FIXED" ? +fixedKg : undefined }]);
+    requestId.current = null;
+    setLines(ls => [...ls, { productId: product.id, shipmentId: ship.id, method, qty: lineQty, kg: +lineKg.toFixed(3), pricePerKg: p, total: lineKg * p, weights: method === "VARIABLE" ? weights : method === "PALLET" ? pallets.map(Number).filter(n => n > 0) : undefined, fixedKg: method === "FIXED" ? +fixedKg : undefined }]);
     toast.success(`${product.name} u shtua në porosi`); setStep("order");
   };
-  const finalize = () => {
-    const s = store.finalizeSale({ clientId, lines, totalKg: +totalKg.toFixed(2), totalValue: totalVal });
-    setDoneSale({ id: s.id, totalKg: s.totalKg, totalValue: s.totalValue }); setStep("done"); toast.success("Porosia u finalizua");
+  const finalize = async () => {
+    try {
+      requestId.current ??= crypto.randomUUID();
+      const s = await store.finalizeSale({ clientId, lines, totalKg: +totalKg.toFixed(2), totalValue: totalVal, requestId: requestId.current });
+      requestId.current = null;
+      setDoneSale({ id: s.id, totalKg: s.totalKg, totalValue: s.totalValue }); setStep("done"); toast.success("Porosia u finalizua");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Porosia nuk u finalizua"); }
   };
-  const reset = () => { setLines([]); setProduct(null); setShip(null); setWeights([]); setBuf(""); setClientId(""); setDoneSale(null); setStep("order"); };
+  const reset = () => { requestId.current = null; setLines([]); setProduct(null); setShip(null); setWeights([]); setBuf(""); setClientId(""); setDoneSale(null); setStep("order"); };
   const printWeights = () => {
-    const w = method === "PALLET" ? pallets.map(Number) : weights; const win = window.open("", "_blank"); if (!win) return;
-    win.document.write(`<html><head><title>Peshat — ${product?.name}</title><style>body{font-family:system-ui;padding:32px;color:#111}h1{font-size:18px;margin:0 0 4px}p{color:#555;margin:0 0 16px;font-size:13px}table{border-collapse:collapse;width:100%;max-width:420px}td{padding:6px 10px;border-bottom:1px solid #ddd;font-size:14px}td:last-child{text-align:right;font-variant-numeric:tabular-nums}tr.t td{font-weight:700;border-top:2px solid #111;border-bottom:0}</style></head><body><h1>${product?.name}</h1><p>Lot ${ship ? lotOf(ship) : ""} · ${fmtDate("2026-09-15")} · FrigoCold WMS</p><table>${w.map((x, i) => `<tr><td>#${i + 1}</td><td>${x.toFixed(2)} kg</td></tr>`).join("")}<tr class="t"><td>Totali (${w.length})</td><td>${w.reduce((a, b) => a + b, 0).toFixed(2)} kg</td></tr></table><script>window.print()</script></body></html>`);
+    const w = method === "PALLET" ? pallets.map(Number).filter(n => n > 0) : weights; const win = window.open("", "_blank"); if (!win) return;
+    win.document.write(`<html><head><title>Peshat — ${escapeHtml(product?.name ?? "")}</title><style>body{font-family:system-ui;padding:32px;color:#111}h1{font-size:18px;margin:0 0 4px}p{color:#555;margin:0 0 16px;font-size:13px}table{border-collapse:collapse;width:100%;max-width:420px}td{padding:6px 10px;border-bottom:1px solid #ddd;font-size:14px}td:last-child{text-align:right;font-variant-numeric:tabular-nums}tr.t td{font-weight:700;border-top:2px solid #111;border-bottom:0}</style></head><body><h1>${escapeHtml(product?.name ?? "")}</h1><p>Lot ${escapeHtml(ship ? lotOf(ship) : "")} · ${fmtDate(todayInTirane())} · FrigoCold WMS</p><table>${w.map((x, i) => `<tr><td>#${i + 1}</td><td>${x.toFixed(3)} kg</td></tr>`).join("")}<tr class="t"><td>Totali (${w.length})</td><td>${w.reduce((a, b) => a + b, 0).toFixed(3)} kg</td></tr></table><script>window.print()</script></body></html>`);
     win.document.close();
   };
   const fefo = useMemo(() => product ? fefoOrder(store.shipments, product.id) : [], [product, store.shipments]);
-  const fefoFirst = fefo[0];
 
   return (
     <AnimatePresence mode="wait">
@@ -79,7 +85,7 @@ export default function DaljePage() {
           <div className="space-y-2">
             {lines.map((l, i) => { const s = store.shipments.find(x => x.id === l.shipmentId); return (
               <div key={i} className="rounded-lg border bg-card p-4">
-                <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-medium">{pname(l.productId)}</div><div className="text-xs text-muted-foreground">Lot {s ? lotOf(s) : "—"} · {l.qty} {l.method === "PALLET" ? "paleta" : "kartona"} · {l.method === "FIXED" ? `Peshë fikse (${l.fixedKg} kg × ${l.qty})` : l.method === "VARIABLE" ? `Peshë e ndryshme (${l.qty} futur)` : `Paleta (${l.qty})`}</div></div><Button variant="ghost" size="icon" aria-label="Hiq" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}><X /></Button></div>
+                <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-medium">{pname(l.productId)}</div><div className="text-xs text-muted-foreground">Lot {s ? lotOf(s) : "—"} · {l.qty} {l.method === "PALLET" ? "paleta" : "kartona"} · {l.method === "FIXED" ? `Peshë fikse (${l.fixedKg} kg × ${l.qty})` : l.method === "VARIABLE" ? `Peshë e ndryshme (${l.qty} futur)` : `Paleta (${l.qty})`}</div></div><Button variant="ghost" size="icon" aria-label="Hiq" onClick={() => { requestId.current = null; setLines(ls => ls.filter((_, j) => j !== i)); }}><X /></Button></div>
                 <div className="mt-3 grid grid-cols-3 gap-3 border-t pt-3 text-sm tabular"><KV k="Pesha" v={fmtKg(l.kg)} /><KV k="Çmimi/kg" v={fmtNum(l.pricePerKg) + " Lek"} /><KV k="Vlera" v={<span className="text-exit">{fmtLek(l.total)}</span>} /></div>
               </div>); })}
           </div>
@@ -173,7 +179,7 @@ export default function DaljePage() {
                 <div className="mb-2 flex justify-between text-xs"><span className="font-medium">Peshat</span><span className="text-muted-foreground">{weights.length} futur</span></div>
                 <div ref={gridRef} className="scroll-thin grid max-h-48 grid-cols-3 gap-1.5 overflow-y-auto">{weights.map((w, i) => <button key={i} onClick={() => setWeights(ws => ws.filter((_, j) => j !== i))} className="group rounded-md border bg-card px-1 py-1.5 text-center font-mono text-xs tabular hover:border-danger" title="Hiq"><span className="block text-[9px] text-muted-foreground group-hover:text-danger">#{i + 1}</span>{w.toFixed(fmt.d)}</button>)}</div>
                 {weights.length === 0 && <p className="py-6 text-center text-xs text-muted-foreground">Asnjë peshë ende. Fillo të shkruash.</p>}
-                <div className="mt-3 border-t pt-3 tabular"><div className="flex justify-between text-xs"><span className="text-muted-foreground">Kartona</span><span>{weights.length}</span></div><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Totali</span><span className="text-2xl font-semibold text-exit">{wSum.toFixed(2)}</span></div></div>
+                <div className="mt-3 border-t pt-3 tabular"><div className="flex justify-between text-xs"><span className="text-muted-foreground">Kartona</span><span>{weights.length}</span></div><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Totali</span><span className="text-2xl font-semibold text-exit">{wSum.toFixed(fmt.d)}</span></div></div>
                 <div className={cn("mt-2 flex justify-between rounded-md px-3 py-2 text-xs", weights.length > remainingCount(ship) ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{weights.length > remainingCount(ship) ? "Më shumë se stoku!" : "Në stok te ky lot"}</span><span>{weights.length} / {remainingCount(ship)}</span></div>
               </div>
               <Button variant="outline" size="sm" className="mt-2 w-full" disabled={!weights.length} onClick={printWeights}><FileText /> Gjenero PDF me peshat</Button>
@@ -211,7 +217,7 @@ export default function DaljePage() {
           <PageHeader title="Klienti" sub="Zgjidh klientin për të finalizuar porosinë" right={<Button variant="ghost" onClick={() => setStep("order")}><ArrowLeft /></Button>} />
           <div className="max-w-md">
             <Label>Klienti</Label>
-            <Select value={clientId} onValueChange={setClientId}><SelectTrigger><SelectValue placeholder="Zgjidh klientin" /></SelectTrigger><SelectContent>{store.clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name} — {c.city}</SelectItem>)}</SelectContent></Select>
+            <Select value={clientId} onValueChange={value => { requestId.current = null; setClientId(value); }}><SelectTrigger><SelectValue placeholder="Zgjidh klientin" /></SelectTrigger><SelectContent>{store.clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name} — {c.city}</SelectItem>)}</SelectContent></Select>
             <div className="mt-4 rounded-lg bg-exit/10 p-4 text-sm text-exit tabular"><div className="flex justify-between py-1"><span>Produkte</span><span>{lines.length}</span></div><div className="flex justify-between py-1"><span>Pesha totale</span><span>{fmtKg(totalKg)}</span></div><div className="mt-1 flex items-center justify-between border-t border-exit/30 pt-3"><span className="font-medium">Vlera totale</span><span className="text-xl font-semibold">{fmtLek(totalVal)}</span></div></div>
             <Button variant="exit" size="lg" className="mt-3 w-full" disabled={!clientId} onClick={finalize}><Check /> Finalizo porosinë</Button>
           </div>
@@ -222,7 +228,7 @@ export default function DaljePage() {
         <motion.div key="done" {...fade} className="mx-auto max-w-md py-8 text-center">
           <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 260, damping: 18 }} className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-entry/40 bg-entry/15"><Check className="h-8 w-8 text-entry" /></motion.div>
           <h2 className="text-lg font-semibold">Porosia u finalizua</h2>
-          <p className="mb-5 text-sm text-muted-foreground">Klienti: {store.clients.find(c => c.id === clientId)?.name} · {fmtDate("2026-09-15")}</p>
+          <p className="mb-5 text-sm text-muted-foreground">Klienti: {store.clients.find(c => c.id === clientId)?.name} · {fmtDate(todayInTirane())}</p>
           <div className="rounded-lg border bg-card p-4 text-left text-sm">{lines.map((l, i) => <div key={i} className="flex justify-between border-b py-2 last:border-0"><span>{pname(l.productId)} <span className="text-muted-foreground">({fmtKg(l.kg)})</span></span><span className="tabular">{fmtLek(l.total)}</span></div>)}<div className="mt-2 flex justify-between border-t pt-3 font-medium"><span>Totali</span><span className="text-exit tabular">{fmtLek(doneSale.totalValue)}</span></div></div>
           <p className="mt-3 text-xs text-muted-foreground">Stoku u përditësua — kg u hoqën nga dërgesat përkatëse dhe lëvizjet u regjistruan.</p>
           <Button variant="exit" size="lg" className="mt-4 w-full" onClick={reset}>Porosi e re</Button>

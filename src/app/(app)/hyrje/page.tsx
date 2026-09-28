@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, CalendarCheck, Check, ChevronRight, ClipboardList, Plus, Save, Search, Trash2, X } from "lucide-react";
@@ -15,7 +15,7 @@ import { PageHeader } from "@/components/shell";
 import { SupplierDialog } from "@/components/entity-dialogs";
 import { remainingKg, useStore } from "@/lib/store";
 import type { DateMode, Draft, LoadType, LotAlloc, Product, WeightType } from "@/lib/types";
-import { cn, fmtDate, fmtKg, fmtLek, fmtNum, TODAY } from "@/lib/utils";
+import { cn, fmtDate, fmtKg, fmtLek, fmtNum, todayInTirane } from "@/lib/utils";
 
 type Step = "product" | "form" | "review" | "done";
 type CostUnit = "kg" | "ton";
@@ -27,7 +27,7 @@ interface Form {
   costUnit: CostUnit; costVal: string;
   dateMode: DateMode; prodFrom: string; prodTo: string; expFrom: string; expTo: string;
 }
-const emptyForm = (): Form => ({ orderNr: "", supplierId: "", entryDate: TODAY, loadType: "CARTON", countDoc: "", countActual: "", netKgDoc: "", netKgActual: "", lots: [{ lotNumber: "", qty: "" }], costUnit: "kg", costVal: "", dateMode: "FIXED", prodFrom: "", prodTo: "", expFrom: "", expTo: "" });
+const emptyForm = (): Form => ({ orderNr: "", supplierId: "", entryDate: todayInTirane(), loadType: "CARTON", countDoc: "", countActual: "", netKgDoc: "", netKgActual: "", lots: [{ lotNumber: "", qty: "" }], costUnit: "kg", costVal: "", dateMode: "FIXED", prodFrom: "", prodTo: "", expFrom: "", expTo: "" });
 
 const fade = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.18 } };
 
@@ -41,6 +41,7 @@ export default function HyrjePage() {
   const [newProd, setNewProd] = useState(false);
   const [newSup, setNewSup] = useState(false);
   const [saved, setSaved] = useState<{ count: number; kg: number; total: number } | null>(null);
+  const requestId = useRef<string | null>(null);
 
   const unit = form.loadType === "CARTON" ? "kartona" : "paleta";
   const cntDoc = +form.countDoc || 0, cntAct = +form.countActual || 0, wDoc = +form.netKgDoc || 0, wAct = +form.netKgActual || 0;
@@ -48,18 +49,19 @@ export default function HyrjePage() {
   const total = wAct * perKg;
   const lotSum = form.lots.reduce((a, l) => a + (+l.qty || 0), 0);
   const avg = cntAct > 0 ? wAct / cntAct : 0;
-  const set = (patch: Partial<Form>) => setForm(f => ({ ...f, ...patch }));
+  const set = (patch: Partial<Form>) => { requestId.current = null; setForm(f => ({ ...f, ...patch })); };
 
   const filtered = useMemo(() => store.products.filter(p => p.name.toLowerCase().includes(q.toLowerCase())), [q, store.products]);
   const stockOf = (p: Product) => store.shipments.filter(s => s.productId === p.id && remainingKg(s) > 0);
 
-  const pick = (p: Product) => { setProduct(p); setForm(emptyForm()); setDraftId(null); setStep("form"); };
+  const pick = (p: Product) => { requestId.current = null; setProduct(p); setForm(emptyForm()); setDraftId(null); setStep("form"); };
   const resume = (d: Draft) => {
+    requestId.current = null;
     const p = store.products.find(x => x.id === d.productId); if (!p) return;
     const x = d.data;
     setProduct(p); setDraftId(d.id);
     setForm({
-      orderNr: x.orderNr ?? "", supplierId: x.supplierId ?? "", entryDate: x.entryDate ?? TODAY, loadType: x.loadType ?? "CARTON",
+      orderNr: x.orderNr ?? "", supplierId: x.supplierId ?? "", entryDate: x.entryDate ?? todayInTirane(), loadType: x.loadType ?? "CARTON",
       countDoc: x.countDoc?.toString() ?? "", countActual: x.countActual?.toString() ?? "", netKgDoc: x.netKgDoc?.toString() ?? "", netKgActual: x.netKgActual?.toString() ?? "",
       lots: (x.lots?.length ? x.lots : [{ lotNumber: "", qty: 0 }]).map(l => ({ lotNumber: l.lotNumber, qty: l.qty ? String(l.qty) : "" })),
       costUnit: "kg", costVal: x.costPerKg?.toString() ?? "",
@@ -74,16 +76,19 @@ export default function HyrjePage() {
     costPerKg: perKg, totalCost: total, dateMode: form.dateMode,
     prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined,
   });
-  const saveDraft = () => { if (!product) return; const d = store.saveDraft({ id: draftId ?? undefined, productId: product.id, data: toDraftData() }); setDraftId(d.id); toast.success("Drafti u ruajt"); setStep("product"); };
-  const canReview = form.orderNr && form.supplierId && form.entryDate && cntAct > 0 && wAct > 0 && perKg > 0 && form.expFrom;
-  const finalize = () => {
+  const saveDraft = async () => { if (!product) return; try { const d = await store.saveDraft({ id: draftId ?? undefined, productId: product.id, data: toDraftData() }); setDraftId(d.id); toast.success("Drafti u ruajt"); setStep("product"); } catch (e) { toast.error(e instanceof Error ? e.message : "Drafti nuk u ruajt"); } };
+  const canReview = form.orderNr && form.supplierId && form.entryDate && cntAct > 0 && wAct > 0 && perKg > 0 && form.expFrom && lotSum === cntAct && form.lots.every(l => l.lotNumber.trim());
+  const finalize = async () => {
     if (!product) return;
     const lots: LotAlloc[] = form.lots.filter(l => l.lotNumber).map(l => ({ lotNumber: l.lotNumber, qty: +l.qty || 0 }));
-    store.addShipment({ productId: product.id, supplierId: form.supplierId, orderNr: form.orderNr, entryDate: form.entryDate, loadType: form.loadType, countDoc: cntDoc, countActual: cntAct, netKgDoc: wDoc, netKgActual: wAct, lots, costPerKg: perKg, totalCost: total, dateMode: form.dateMode, prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined });
-    if (draftId) store.deleteDraft(draftId);
-    setSaved({ count: cntAct, kg: wAct, total }); setStep("done"); toast.success("Dërgesa u regjistrua");
+    try {
+      requestId.current ??= crypto.randomUUID();
+      await store.addShipment({ productId: product.id, supplierId: form.supplierId, orderNr: form.orderNr, entryDate: form.entryDate, loadType: form.loadType, countDoc: cntDoc, countActual: cntAct, netKgDoc: wDoc, netKgActual: wAct, lots, costPerKg: perKg, totalCost: total, dateMode: form.dateMode, prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined, draftId: draftId ?? undefined, requestId: requestId.current });
+      requestId.current = null;
+      setSaved({ count: cntAct, kg: wAct, total }); setStep("done"); toast.success("Dërgesa u regjistrua");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Dërgesa nuk u regjistrua"); }
   };
-  const reset = () => { setStep("product"); setProduct(null); setForm(emptyForm()); setDraftId(null); setSaved(null); };
+  const reset = () => { requestId.current = null; setStep("product"); setProduct(null); setForm(emptyForm()); setDraftId(null); setSaved(null); };
   const supplier = store.suppliers.find(s => s.id === form.supplierId);
 
   return (
@@ -101,7 +106,7 @@ export default function HyrjePage() {
                       <Save className="h-4 w-4 shrink-0 text-warn" />
                       <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-warn">Porosia {d.data.orderNr || "—"} · {p?.name}</div><div className="text-xs text-warn/80">{d.data.countActual ?? 0} {d.data.loadType === "PALLET" ? "paleta" : "kartona"} · {fmtNum(d.data.netKgActual ?? 0)} kg · ruajtur {new Date(d.savedAt).toLocaleTimeString("sq-AL", { hour: "2-digit", minute: "2-digit" })}</div></div>
                     </button>
-                    <Button variant="ghost" size="icon" aria-label="Fshi draftin" onClick={() => { store.deleteDraft(d.id); toast("Drafti u fshi"); }}><Trash2 className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" aria-label="Fshi draftin" onClick={async () => { try { await store.deleteDraft(d.id); toast("Drafti u fshi"); } catch (e) { toast.error(e instanceof Error ? e.message : "Fshirja dështoi"); } }}><Trash2 className="h-4 w-4" /></Button>
                   </div>); })}
               </div>
             </section>
@@ -123,7 +128,7 @@ export default function HyrjePage() {
       {step === "form" && product && (
         <motion.div key="form" {...fade}>
           <PageHeader title={`Dërgesë e re — ${product.name}`} sub={draftId ? "Draft i rikthyer" : "Hapi 2 nga 3"} right={<Button variant="ghost" onClick={() => setStep("product")}><ArrowLeft /> Produktet</Button>} />
-          <Banner className="mb-6"><ClipboardList className="mr-1 inline h-3.5 w-3.5" />Plotëso sipas fletë-ngarkesës dhe shkarkimit faktik. Fushat "faktike" plotësohen vetë — ndryshoji vetëm nëse ka mospërputhje.</Banner>
+          <Banner className="mb-6"><ClipboardList className="mr-1 inline h-3.5 w-3.5" />Plotëso sipas fletë-ngarkesës dhe shkarkimit faktik. Fushat &quot;faktike&quot; plotësohen vetë — ndryshoji vetëm nëse ka mospërputhje.</Banner>
 
           <Section n={1} title="Të dhënat e porosisë">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -137,7 +142,7 @@ export default function HyrjePage() {
               <div>
                 <Label>Data e hyrjes <Req /></Label>
                 <Input type="date" value={form.entryDate} onChange={e => set({ entryDate: e.target.value })} />
-                <Hint>{form.entryDate === TODAY ? <><CalendarCheck className="mr-1 inline h-3 w-3 text-entry" />Plotësohet me datën e sotme — ndryshoje nëse ngarkesa ka mbërritur më parë.</> : <span className="text-warn"><CalendarCheck className="mr-1 inline h-3 w-3" />Datë e ndryshuar manualisht ({fmtDate(form.entryDate)}) — sot është {fmtDate(TODAY)}.</span>}</Hint>
+                <Hint>{form.entryDate === todayInTirane() ? <><CalendarCheck className="mr-1 inline h-3 w-3 text-entry" />Plotësohet me datën e sotme — ndryshoje nëse ngarkesa ka mbërritur më parë.</> : <span className="text-warn"><CalendarCheck className="mr-1 inline h-3 w-3" />Datë e ndryshuar manualisht ({fmtDate(form.entryDate)}) — sot është {fmtDate(todayInTirane())}.</span>}</Hint>
               </div>
             </div>
           </Section>
@@ -206,13 +211,13 @@ export default function HyrjePage() {
           </div>
           <div className="grid gap-x-8 gap-y-1 rounded-lg border bg-card p-5 sm:grid-cols-2">
             <Row k="Produkti" v={product.name} /><Row k="Pesha neto" v={fmtKg(wAct)} />
-            <Row k="Data e hyrjes" v={<span className={form.entryDate !== TODAY ? "text-warn" : undefined}>{form.entryDate ? fmtDate(form.entryDate) : "—"}</span>} /><Row k="Lotet" v={form.lots.filter(l => l.lotNumber).map(l => `${l.lotNumber} (${l.qty || 0})`).join(", ") || "—"} />
+            <Row k="Data e hyrjes" v={<span className={form.entryDate !== todayInTirane() ? "text-warn" : undefined}>{form.entryDate ? fmtDate(form.entryDate) : "—"}</span>} /><Row k="Lotet" v={form.lots.filter(l => l.lotNumber).map(l => `${l.lotNumber} (${l.qty || 0})`).join(", ") || "—"} />
             <Row k="Nr. porosie" v={form.orderNr} /><Row k="Kosto / kg" v={fmtNum(perKg, 2) + " Lek"} />
             <Row k="Furnizuesi" v={supplier?.name ?? "—"} /><Row k="Vlera totale" v={<span className="text-entry">{fmtLek(total)}</span>} />
             <Row k="Forma" v={form.loadType === "CARTON" ? "Kartona" : "Paleta"} /><Row k="Prodhimi" v={form.prodFrom ? fmtDate(form.prodFrom) + (form.dateMode === "RANGE" && form.prodTo ? ` – ${fmtDate(form.prodTo)}` : "") : "—"} />
             <Row k="Sasia" v={`${cntAct} ${unit}`} /><Row k="Skadimi" v={form.expFrom ? fmtDate(form.expFrom) + (form.dateMode === "RANGE" ? " (më e hershmja)" : "") : "—"} />
           </div>
-          <div className="mt-4 grid max-w-md grid-cols-2 gap-3"><Button variant="outline" size="lg" onClick={() => setStep("form")}>Kthehu & ndrysho</Button><Button variant="entry" size="lg" onClick={finalize}><Check /> Ruaj dërgesën</Button></div>
+          <div className="mt-4 grid max-w-md grid-cols-2 gap-3"><Button variant="outline" size="lg" onClick={() => setStep("form")}>Kthehu & ndrysho</Button><Button variant="entry" size="lg" disabled={!canReview} onClick={finalize}><Check /> Ruaj dërgesën</Button></div>
         </motion.div>
       )}
 
@@ -260,7 +265,7 @@ function NewProductDialog({ open, onClose, onCreate }: { open: boolean; onClose:
           <div><Label>Origjina (opsionale)</Label><Input value={origin} onChange={e => setOrigin(e.target.value)} placeholder="p.sh. Brazil" /></div>
           <div><Label>Lloji i peshës</Label><Segmented value={wt} onChange={setWt} options={[{ value: "VARIABLE", label: "Variabile" }, { value: "FIXED", label: "Fikse" }, { value: "PALLET", label: "Paleta" }]} /></div>
           {wt === "FIXED" && <div><Label>Pesha fikse për karton (kg)</Label><Input type="number" value={fixed} onChange={e => setFixed(e.target.value)} placeholder="p.sh. 10" /></div>}
-          <Button variant="entry" className="w-full" disabled={!name.trim()} onClick={() => onCreate(add({ name: name.trim(), origin: origin || undefined, weightType: wt, fixedKg: wt === "FIXED" ? +fixed || undefined : undefined }))}>Krijo & vazhdo</Button>
+          <Button variant="entry" className="w-full" disabled={!name.trim() || (wt === "FIXED" && !(+fixed > 0))} onClick={async () => { try { onCreate(await add({ name: name.trim(), origin: origin || undefined, weightType: wt, fixedKg: wt === "FIXED" ? +fixed || undefined : undefined })); } catch (e) { toast.error(e instanceof Error ? e.message : "Produkti nuk u krijua"); } }}>Krijo & vazhdo</Button>
         </div>
       </DialogContent>
     </Dialog>

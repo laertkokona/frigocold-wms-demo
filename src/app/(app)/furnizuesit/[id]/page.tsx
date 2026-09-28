@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/shell";
 import { SupplierDialog } from "@/components/entity-dialogs";
-import { remainingCount, remainingKg, useStore } from "@/lib/store";
+import { remainingKg, useStore } from "@/lib/store";
 import { daysUntil, fmtDate, fmtKg, fmtLek, fmtMonth, fmtNum } from "@/lib/utils";
 
 export default function SupplierDetail() {

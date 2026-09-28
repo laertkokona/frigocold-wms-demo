@@ -1,6 +1,6 @@
 import type { Client, Product, Sale, Shipment, Thresholds } from "./types";
-import { daysUntil, TODAY } from "./utils";
-import { remainingCount, remainingKg } from "./store";
+import { daysUntil, todayInTirane } from "./utils";
+import { remainingCount, remainingKg } from "./stock";
 
 export interface Alert { level: "danger" | "warn"; title: string; detail: string; href: string; }
 
@@ -35,7 +35,7 @@ export function stockByProduct(shipments: Shipment[], products: Product[]) {
 
 export function monthKey(iso: string) { return iso.slice(0, 7); }
 export function lastMonths(n: number) {
-  const out: string[] = []; const d = new Date(TODAY);
+  const out: string[] = []; const d = new Date(todayInTirane());
   for (let i = n - 1; i >= 0; i--) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); out.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`); }
   return out;
 }
@@ -52,7 +52,7 @@ export function flows(shipments: Shipment[], sales: Sale[], months: string[]) {
 }
 
 export function clientStats(clients: Client[], sales: Sale[]) {
-  const cur = monthKey(TODAY); const prev = lastMonths(2)[0];
+  const cur = monthKey(todayInTirane()); const prev = lastMonths(2)[0];
   return clients.map(c => {
     const all = sales.filter(s => s.clientId === c.id);
     const kgCur = all.filter(s => monthKey(s.date) === cur).reduce((a, s) => a + s.totalKg, 0);
@@ -70,7 +70,7 @@ export function productProfit(products: Product[], shipments: Shipment[], sales:
     const kg = lines.reduce((a, l) => a + l.kg, 0);
     const revenue = lines.reduce((a, l) => a + l.total, 0);
     const cost = lines.reduce((a, l) => a + l.kg * (shipments.find(s => s.id === l.shipmentId)?.costPerKg ?? 0), 0);
-    const cur = monthKey(TODAY), prev = lastMonths(2)[0];
+    const cur = monthKey(todayInTirane()), prev = lastMonths(2)[0];
     const kgCur = lines.filter(l => monthKey(l.date) === cur).reduce((a, l) => a + l.kg, 0);
     const kgPrev = lines.filter(l => monthKey(l.date) === prev).reduce((a, l) => a + l.kg, 0);
     return { product: p, kg, revenue, cost, profit: revenue - cost, margin: revenue ? (revenue - cost) / revenue : 0, kgCur, kgPrev, delta: kgPrev ? (kgCur - kgPrev) / kgPrev : (kgCur ? 1 : 0) };
@@ -80,7 +80,7 @@ export function productProfit(products: Product[], shipments: Shipment[], sales:
 export function daysOnHand(p: Product, shipments: Shipment[], sales: Sale[]) {
   const sh = shipments.filter(s => s.productId === p.id);
   const stock = sh.reduce((a, s) => a + remainingKg(s), 0);
-  const since = new Date(TODAY); since.setDate(since.getDate() - 90);
+  const since = new Date(todayInTirane()); since.setDate(since.getDate() - 90);
   const out90 = sales.filter(s => new Date(s.date) >= since).flatMap(s => s.lines).filter(l => l.productId === p.id).reduce((a, l) => a + l.kg, 0);
   const perDay = out90 / 90;
   return perDay > 0 ? Math.round(stock / perDay) : null;

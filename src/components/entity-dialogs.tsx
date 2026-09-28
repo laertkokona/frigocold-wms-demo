@@ -8,16 +8,29 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { useStore } from "@/lib/store";
 import type { Client, Supplier } from "@/lib/types";
 
+async function compactCommand(type: string, data: unknown, id?: string): Promise<string> {
+  const response = await fetch("/api/commands", {
+    method: "POST", headers: { "Content-Type": "application/json", "x-include-state": "0" },
+    body: JSON.stringify({ type, data, ...(id ? { id } : {}) }),
+  });
+  if (response.status === 401) { window.location.assign("/login"); throw new Error("Session expired"); }
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error ?? "Request failed");
+  return payload.result.id;
+}
+
 /** Add or edit a client. Pass `client` to edit; omit to create. */
-export function ClientDialog({ open, onClose, client, onSaved }: { open: boolean; onClose: () => void; client?: Client; onSaved?: (c: Client) => void }) {
+export function ClientDialog({ open, onClose, client, onSaved, compact = false }: { open: boolean; onClose: () => void; client?: Client; onSaved?: (c: Client) => void; compact?: boolean }) {
   const { addClient, updateClient } = useStore();
   const [f, setF] = useState({ name: "", city: "", contact: "", phone: "" });
   useEffect(() => { if (open) setF({ name: client?.name ?? "", city: client?.city ?? "", contact: client?.contact ?? "", phone: client?.phone ?? "" }); }, [open, client]);
-  const save = () => {
-    const data = { name: f.name.trim(), city: f.city.trim(), contact: f.contact.trim() || undefined, phone: f.phone.trim() || undefined };
-    if (client) { updateClient(client.id, data); toast.success("Klienti u përditësua"); onSaved?.({ ...client, ...data }); }
-    else { const c = addClient(data); toast.success("Klienti u shtua"); onSaved?.(c); }
-    onClose();
+  const save = async () => {
+    const data = { name: f.name.trim(), city: f.city.trim(), contact: f.contact.trim(), phone: f.phone.trim() };
+    try {
+      if (client) { if (compact) await compactCommand("updateClient", data, client.id); else await updateClient(client.id, data); toast.success("Klienti u përditësua"); onSaved?.({ ...client, ...data }); }
+      else { const c = compact ? { id: await compactCommand("addClient", data), ...data } : await addClient(data); toast.success("Klienti u shtua"); onSaved?.(c); }
+      onClose();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Ruajtja dështoi"); }
   };
   return (
     <Dialog open={open} onOpenChange={o => !o && onClose()}>
@@ -39,15 +52,17 @@ export function ClientDialog({ open, onClose, client, onSaved }: { open: boolean
 }
 
 /** Add or edit a supplier. Pass `supplier` to edit; omit to create. */
-export function SupplierDialog({ open, onClose, supplier, onSaved }: { open: boolean; onClose: () => void; supplier?: Supplier; onSaved?: (s: Supplier) => void }) {
+export function SupplierDialog({ open, onClose, supplier, onSaved, compact = false }: { open: boolean; onClose: () => void; supplier?: Supplier; onSaved?: (s: Supplier) => void; compact?: boolean }) {
   const { addSupplier, updateSupplier } = useStore();
   const [f, setF] = useState({ name: "", country: "", contact: "", phone: "" });
   useEffect(() => { if (open) setF({ name: supplier?.name ?? "", country: supplier?.country ?? "", contact: supplier?.contact ?? "", phone: supplier?.phone ?? "" }); }, [open, supplier]);
-  const save = () => {
-    const data = { name: f.name.trim(), country: f.country.trim(), contact: f.contact.trim() || undefined, phone: f.phone.trim() || undefined };
-    if (supplier) { updateSupplier(supplier.id, data); toast.success("Furnizuesi u përditësua"); onSaved?.({ ...supplier, ...data }); }
-    else { const s = addSupplier(data); toast.success("Furnizuesi u shtua"); onSaved?.(s); }
-    onClose();
+  const save = async () => {
+    const data = { name: f.name.trim(), country: f.country.trim(), contact: f.contact.trim(), phone: f.phone.trim() };
+    try {
+      if (supplier) { if (compact) await compactCommand("updateSupplier", data, supplier.id); else await updateSupplier(supplier.id, data); toast.success("Furnizuesi u përditësua"); onSaved?.({ ...supplier, ...data }); }
+      else { const s = compact ? { id: await compactCommand("addSupplier", data), ...data } : await addSupplier(data); toast.success("Furnizuesi u shtua"); onSaved?.(s); }
+      onClose();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Ruajtja dështoi"); }
   };
   return (
     <Dialog open={open} onOpenChange={o => !o && onClose()}>

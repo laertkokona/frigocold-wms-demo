@@ -7,28 +7,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Banner } from "@/components/ui/banner";
 import { PageHeader } from "@/components/shell";
-import { remainingCount, remainingKg, useStore } from "@/lib/store";
-import { clientStats, computeAlerts, daysOnHand, flows, lastMonths, productProfit, stockByProduct, monthKey } from "@/lib/calc";
-import { cn, daysUntil, fmtDate, fmtKg, fmtLek, fmtMonth, fmtNum, TODAY } from "@/lib/utils";
+import { useServerReport } from "@/lib/use-server-report";
+import type { DashboardData } from "@/lib/server/dashboard";
+import { cn, daysUntil, fmtDate, fmtKg, fmtLek, fmtNum, todayInTirane } from "@/lib/utils";
 
 export default function Dashboard() {
-  const { shipments, products, sales, clients, suppliers, thresholds } = useStore();
-  const alerts = computeAlerts(shipments, products, thresholds);
-  const stock = stockByProduct(shipments, products);
-  const totalKg = stock.reduce((a, s) => a + s.kg, 0), totalVal = stock.reduce((a, s) => a + s.value, 0);
-  const months = lastMonths(6); const fl = flows(shipments, sales, months);
+  const report = useServerReport<DashboardData>("/api/dashboard");
+  if (!report.data) return <div className="rounded-lg border p-6">{report.error ? <>Raporti nuk u ngarkua. <button className="underline" onClick={report.refresh}>Provo sërish</button></> : "Po ngarkohet…"}</div>;
+  const { alerts, stock, fl, cs, pp, churn, churnCount, turnover, fastest, slowest, mostProfitable, expiring, supplierPerformance, clientCount, activeClientCount, totalKg, totalVal, riskKg, riskVal, expiryBuckets, profitMonth, concentration: conc } = report.data;
   const cur = fl[fl.length - 1], prev = fl[fl.length - 2];
-  const cs = clientStats(clients, sales); const pp = productProfit(products, shipments, sales);
-  const riskKg = shipments.filter(s => remainingKg(s) > 0 && daysUntil(s.expFrom) <= thresholds.expiryDays).reduce((a, s) => a + remainingKg(s), 0);
-  const riskVal = shipments.filter(s => remainingKg(s) > 0 && daysUntil(s.expFrom) <= thresholds.expiryDays).reduce((a, s) => a + remainingKg(s) * s.costPerKg, 0);
   const maxFlow = Math.max(...fl.map(f => Math.max(f.inKg, f.outKg)), 1);
-  const revenueMonth = cur.revenue; const profitMonth = sales.filter(s => monthKey(s.date) === months[5]).flatMap(s => s.lines).reduce((a, l) => a + l.kg * (l.pricePerKg - (shipments.find(x => x.id === l.shipmentId)?.costPerKg ?? 0)), 0);
-  const churn = cs.filter(c => c.orders > 0 && c.daysSince > 30);
-  const conc = cs.slice(0, 2).reduce((a, c) => a + c.valCur, 0) / Math.max(1, cs.reduce((a, c) => a + c.valCur, 0));
+  const revenueMonth = cur.revenue;
 
   return (
     <>
-      <PageHeader title="Paneli kryesor" sub={`${fmtDate(TODAY)} · Frigo ALBA, Kashar`} right={<div className="flex gap-2"><Button asChild variant="entry"><Link href="/hyrje"><PackagePlus /> Hyrje e re</Link></Button><Button asChild variant="exit"><Link href="/dalje"><PackageMinus /> Porosi shitjeje</Link></Button></div>} />
+      <PageHeader title="Paneli kryesor" sub={`${fmtDate(todayInTirane())} · Frigo ALBA, Kashar`} right={<div className="flex gap-2"><Button asChild variant="entry"><Link href="/hyrje"><PackagePlus /> Hyrje e re</Link></Button><Button asChild variant="exit"><Link href="/dalje"><PackageMinus /> Porosi shitjeje</Link></Button></div>} />
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Stoku total" value={fmtKg(totalKg, 0)} sub={`vlerë kostoje ${fmtLek(totalVal)}`} />
         <Stat label="Të ardhura këtë muaj" value={fmtLek(revenueMonth)} sub={<Delta a={cur.revenue} b={prev.revenue} />} />
@@ -47,8 +40,8 @@ export default function Dashboard() {
             </CardContent></Card>
             <Card><CardHeader><CardTitle>Lëvizësit kryesorë</CardTitle><CardDescription>Këtë muaj</CardDescription></CardHeader><CardContent className="text-sm">
               <Mover icon={Crown} label="Klienti kryesor" sub={cs[0]?.client.name ?? "—"} val={fmtLek(cs[0]?.valCur ?? 0)} />
-              <Mover icon={TrendingUp} label="Produkti më fitimprurës" sub={pp[0]?.product.name ?? "—"} val={fmtLek(pp[0]?.profit ?? 0)} />
-              {(() => { const d = products.map(p => ({ p, d: daysOnHand(p, shipments, sales) })).filter(x => x.d !== null).sort((a, b) => a.d! - b.d!); return <><Mover icon={Zap} label="Lëvizja më e shpejtë" sub={`${d[0]?.p.name ?? "—"} · ${d[0]?.d ?? "—"} ditë në stok`} val="i shpejtë" /><Mover icon={Zap} label="Lëvizja më e ngadaltë" sub={`${d.at(-1)?.p.name ?? "—"} · ${d.at(-1)?.d ?? "—"} ditë në stok`} val={<span className="text-warn">i ngadaltë</span>} /></>; })()}
+              <Mover icon={TrendingUp} label="Produkti më fitimprurës" sub={mostProfitable?.product.name ?? "—"} val={fmtLek(mostProfitable?.profit ?? 0)} />
+              <Mover icon={Zap} label="Lëvizja më e shpejtë" sub={`${fastest?.product.name ?? "—"} · ${fastest?.days ?? "—"} ditë në stok`} val="i shpejtë" /><Mover icon={Zap} label="Lëvizja më e ngadaltë" sub={`${slowest?.product.name ?? "—"} · ${slowest?.days ?? "—"} ditë në stok`} val={<span className="text-warn">i ngadaltë</span>} />
             </CardContent></Card>
           </div>
           <Card className="mt-4"><CardHeader><CardTitle>Çfarë kërkon vëmendje</CardTitle><CardDescription>Përfundime automatike nga të dhënat</CardDescription></CardHeader><CardContent className="space-y-2">
@@ -62,15 +55,15 @@ export default function Dashboard() {
         <TabsContent value="inv">
           <Card><CardHeader><CardTitle>Mosha e stokut — rrezik skadimi</CardTitle><CardDescription>Sa kg skadon brenda secilës dritare kohore</CardDescription></CardHeader><CardContent>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {[["< 60 ditë", 0, 60, "danger"], ["60–180 ditë", 60, 180, "warn"], ["180–365 ditë", 180, 365, "entry"], ["> 365 ditë", 365, 99999, ""]].map(([l, a, b, t]) => { const kg = shipments.filter(s => remainingKg(s) > 0 && daysUntil(s.expFrom) >= +a && daysUntil(s.expFrom) < +b).reduce((x, s) => x + remainingKg(s), 0); return <div key={l as string} className={cn("rounded-lg p-4 text-center", t === "danger" && "bg-danger/10 text-danger", t === "warn" && "bg-warn/10 text-warn", t === "entry" && "bg-entry/10 text-entry", t === "" && "bg-secondary text-muted-foreground")}><div className="text-xl font-semibold tabular">{fmtKg(kg, 0)}</div><div className="text-[11px]">{l}</div></div>; })}
+              {[["< 60 ditë", "danger"], ["60–180 ditë", "warn"], ["180–365 ditë", "entry"], ["> 365 ditë", ""]].map(([l, t], i) => <div key={l} className={cn("rounded-lg p-4 text-center", t === "danger" && "bg-danger/10 text-danger", t === "warn" && "bg-warn/10 text-warn", t === "entry" && "bg-entry/10 text-entry", t === "" && "bg-secondary text-muted-foreground")}><div className="text-xl font-semibold tabular">{fmtKg(expiryBuckets[i], 0)}</div><div className="text-[11px]">{l}</div></div>)}
             </div>
           </CardContent></Card>
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <Card><CardHeader><CardTitle>Ditë në stok (turnover)</CardTitle><CardDescription>Sa shpejt lëviz çdo produkt — më pak = më mirë</CardDescription></CardHeader><CardContent className="space-y-2">
-              {products.map(p => { const d = daysOnHand(p, shipments, sales); const w = d === null ? 0 : Math.min(100, d / 2); return <div key={p.id} className="flex items-center gap-3 text-sm"><span className="w-40 truncate">{p.name}</span><div className="h-4 flex-1 overflow-hidden rounded bg-secondary"><div className={cn("flex h-full items-center pl-2 text-[10px] font-medium text-white", d === null ? "bg-border" : d < 30 ? "bg-entry" : d < 90 ? "bg-warn" : "bg-danger")} style={{ width: `${Math.max(w, 12)}%` }}>{d === null ? "pa shitje" : `${d}d`}</div></div></div>; })}
+              {turnover.map(({ product, days }) => { const d = days; const w = d === null ? 0 : Math.min(100, d / 2); return <div key={product.id} className="flex items-center gap-3 text-sm"><span className="w-40 truncate">{product.name}</span><div className="h-4 flex-1 overflow-hidden rounded bg-secondary"><div className={cn("flex h-full items-center pl-2 text-[10px] font-medium text-white", d === null ? "bg-border" : d < 30 ? "bg-entry" : d < 90 ? "bg-warn" : "bg-danger")} style={{ width: `${Math.max(w, 12)}%` }}>{d === null ? "pa shitje" : `${d}d`}</div></div></div>; })}
             </CardContent></Card>
             <Card><CardHeader><CardTitle>Rreziku i skadimit sipas lotit</CardTitle><CardDescription>Renditur nga më urgjenti</CardDescription></CardHeader><CardContent>
-              {[...shipments].filter(s => remainingKg(s) > 0).sort((a, b) => a.expFrom.localeCompare(b.expFrom)).slice(0, 6).map(s => { const d = daysUntil(s.expFrom); return <Link href={`/inventari/${s.id}`} key={s.id} className="flex items-center justify-between border-b py-2.5 text-sm last:border-0 hover:bg-accent/40"><div><div className="font-medium">Lot {s.lots[0]?.lotNumber} · {products.find(p => p.id === s.productId)?.name} <Badge variant={d < 60 ? "danger" : d < 180 ? "warn" : "entry"} className="ml-1">{d < 0 ? "skaduar" : `${d} ditë`}</Badge></div><div className="text-xs text-muted-foreground">{suppliers.find(x => x.id === s.supplierId)?.name} · {remainingCount(s)} {s.loadType === "PALLET" ? "paleta" : "kartona"}</div></div><span className="tabular">{fmtKg(remainingKg(s), 0)}</span></Link>; })}
+              {expiring.map(s => { const d = daysUntil(s.expFrom); return <Link href={`/inventari/${s.id}`} key={s.id} className="flex items-center justify-between border-b py-2.5 text-sm last:border-0 hover:bg-accent/40"><div><div className="font-medium">Lot {s.lot} · {s.product} <Badge variant={d < 60 ? "danger" : d < 180 ? "warn" : "entry"} className="ml-1">{d < 0 ? "skaduar" : `${d} ditë`}</Badge></div><div className="text-xs text-muted-foreground">{s.supplier} · {s.remainingCount} {s.loadType === "PALLET" ? "paleta" : "kartona"}</div></div><span className="tabular">{fmtKg(s.remainingKg, 0)}</span></Link>; })}
             </CardContent></Card>
           </div>
           <Card className="mt-4"><CardHeader><CardTitle>Stoku sipas produktit</CardTitle><CardDescription>Kg dhe vlera me kosto</CardDescription></CardHeader><CardContent className="space-y-2">
@@ -79,7 +72,7 @@ export default function Dashboard() {
         </TabsContent>
 
         <TabsContent value="cli">
-          <div className="mb-4 grid gap-3 sm:grid-cols-3"><Stat label="Klientë aktivë" value={String(cs.filter(c => c.orders > 0).length)} sub={`${clients.length} gjithsej`} /><Stat label="Përqendrimi (top 2)" value={`${(conc * 100).toFixed(0)}%`} sub="e vlerës këtë muaj" /><Stat label="Në rrezik largimi" value={String(churn.length)} sub="pa porosi 30+ ditë" tone={churn.length ? "warn" : undefined} /></div>
+          <div className="mb-4 grid gap-3 sm:grid-cols-3"><Stat label="Klientë aktivë" value={String(activeClientCount)} sub={`${clientCount} gjithsej`} /><Stat label="Përqendrimi (top 2)" value={`${(conc * 100).toFixed(0)}%`} sub="e vlerës këtë muaj" /><Stat label="Në rrezik largimi" value={String(churnCount)} sub="pa porosi 30+ ditë" tone={churnCount ? "warn" : undefined} /></div>
           <div className="grid gap-4 lg:grid-cols-2">
             <Card><CardHeader><CardTitle>Renditja & tendenca</CardTitle><CardDescription>Vlera këtë muaj, ndryshimi vs muaji i kaluar (kg)</CardDescription></CardHeader><CardContent>
               {cs.filter(c => c.orders > 0).map((c, i) => <Link href={`/klientet/${c.client.id}`} key={c.client.id} className="flex items-center gap-3 border-b py-2.5 text-sm last:border-0 hover:bg-accent/40"><span className={cn("flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-medium", i < 2 ? "bg-entry/15 text-entry" : "bg-secondary text-muted-foreground")}>{i + 1}</span><div className="flex-1"><div className="font-medium">{c.client.name}</div><div className="text-xs text-muted-foreground">{c.orders} porosi · {c.client.city}</div></div><div className="text-right tabular"><div>{fmtLek(c.valCur)}</div><Delta a={c.kgCur} b={c.kgPrev} small /></div></Link>)}
@@ -94,8 +87,8 @@ export default function Dashboard() {
 
         <TabsContent value="sup">
           <Card><CardHeader><CardTitle>Performanca e furnizuesve</CardTitle><CardDescription>Kosto mesatare, jetëgjatësi në mbërritje, mospërputhje dokument–faktik</CardDescription></CardHeader><CardContent>
-            {suppliers.map(sp => { const sh = shipments.filter(s => s.supplierId === sp.id); if (!sh.length) return null; const kg = sh.reduce((a, s) => a + s.netKgActual, 0); const cost = sh.reduce((a, s) => a + s.totalCost, 0) / kg; const life = Math.round(sh.reduce((a, s) => a + (new Date(s.expFrom).getTime() - new Date(s.entryDate).getTime()) / 86400000, 0) / sh.length / 30); const disc = sh.reduce((a, s) => a + Math.abs(s.netKgDoc - s.netKgActual), 0); const discPct = disc / sh.reduce((a, s) => a + s.netKgDoc, 0) * 100; return (
-              <div key={sp.id} className="flex flex-wrap items-center gap-3 border-b py-3 text-sm last:border-0"><div className="min-w-48 flex-1"><div className="font-medium">{sp.name} <span className="text-xs text-muted-foreground">({sp.country})</span></div><div className="text-xs text-muted-foreground">{sh.length} dërgesa · {fmtKg(kg, 0)} importuar</div></div><KV k="Kosto mes. / kg" v={fmtNum(cost, 0) + " Lek"} /><KV k="Jetëgjatësi në mbërritje" v={<span className={cn(life < 6 && "text-warn")}>{life} muaj</span>} /><KV k="Mospërputhje" v={<span className={cn(discPct > 0.5 && "text-warn")}>{discPct.toFixed(2)}%</span>} /></div>); })}
+              {supplierPerformance.map(sp => (
+              <div key={sp.id} className="flex flex-wrap items-center gap-3 border-b py-3 text-sm last:border-0"><div className="min-w-48 flex-1"><div className="font-medium">{sp.name} <span className="text-xs text-muted-foreground">({sp.country})</span></div><div className="text-xs text-muted-foreground">{sp.count} dërgesa · {fmtKg(sp.kg, 0)} importuar</div></div><KV k="Kosto mes. / kg" v={fmtNum(sp.cost, 0) + " Lek"} /><KV k="Jetëgjatësi në mbërritje" v={<span className={cn(sp.life < 6 && "text-warn")}>{sp.life} muaj</span>} /><KV k="Mospërputhje" v={<span className={cn(sp.discPct > 0.5 && "text-warn")}>{sp.discPct.toFixed(2)}%</span>} /></div>))}
           </CardContent></Card>
         </TabsContent>
 

@@ -3,8 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Bell, Calculator, LayoutDashboard, LogOut, PackageMinus, PackagePlus, Search, Settings, Snowflake, Truck, Users, Warehouse, ListOrdered } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useStore } from "@/lib/store";
-import { computeAlerts } from "@/lib/calc";
+import { useServerReport } from "@/lib/use-server-report";
 
 const items = [
   { href: "/dashboard", label: "Paneli", icon: LayoutDashboard },
@@ -21,15 +20,14 @@ const items = [
 
 export function Rail() {
   const path = usePathname(); const router = useRouter();
-  const { shipments, products, thresholds, drafts } = useStore();
-  const alerts = computeAlerts(shipments, products, thresholds);
-  const logout = () => { document.cookie = "fc_session=; path=/; max-age=0"; router.replace("/login"); };
+  const nav = useServerReport<{ alerts: number; drafts: number }>("/api/nav", 30000);
+  const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }); router.replace("/login"); router.refresh(); };
   return (
     <nav className="fixed inset-y-0 left-0 z-40 flex w-[72px] flex-col items-center border-r bg-card py-4 max-md:inset-x-0 max-md:bottom-0 max-md:top-auto max-md:h-16 max-md:w-full max-md:flex-row max-md:justify-around max-md:border-r-0 max-md:border-t max-md:py-0" aria-label="Navigimi kryesor">
       <Link href="/dashboard" className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-entry text-entry-foreground max-md:hidden" aria-label="FrigoCold"><Snowflake className="h-5 w-5" /></Link>
       {items.map(it => {
         const active = path === it.href || path.startsWith(it.href + "/");
-        const badge = it.href === "/alarmet" ? alerts.length : it.href === "/hyrje" ? drafts.length : 0;
+        const badge = it.href === "/alarmet" ? nav.data?.alerts ?? 0 : it.href === "/hyrje" ? nav.data?.drafts ?? 0 : 0;
         return (
           <Link key={it.href} href={it.href} aria-current={active ? "page" : undefined}
             className={cn("relative mb-1 flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground max-md:mb-0 max-md:h-14",

@@ -1,16 +1,16 @@
 import type { Client, Product, Sale, SaleLine, Shipment, Supplier, Thresholds } from "./types";
-import { remainingKg } from "./store";
-import { daysUntil, TODAY } from "./utils";
+import { remainingKg } from "./stock";
+import { daysUntil, todayInTirane } from "./utils";
 
 /* ---------- period ---------- */
 export type PeriodKey = "month" | "quarter" | "year" | "all";
 export interface Period { key: PeriodKey; from: string; to: string; label: string; prevFrom: string; prevTo: string; prevLabel: string; }
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const MONTHS = ["Janar", "Shkurt", "Mars", "Prill", "Maj", "Qershor", "Korrik", "Gusht", "Shtator", "Tetor", "Nëntor", "Dhjetor"];
 
 export function buildPeriod(key: PeriodKey): Period {
-  const t = new Date(TODAY), y = t.getFullYear(), m = t.getMonth();
+  const [y, month] = todayInTirane().split("-").map(Number), m = month - 1;
   if (key === "month") {
     const f = new Date(y, m, 1), to = new Date(y, m + 1, 0), pf = new Date(y, m - 1, 1), pt = new Date(y, m, 0);
     return { key, from: iso(f), to: iso(to), label: `${MONTHS[m]} ${y}`, prevFrom: iso(pf), prevTo: iso(pt), prevLabel: `${MONTHS[pf.getMonth()]} ${pf.getFullYear()}` };
@@ -62,7 +62,7 @@ export function monthsBetween(from: string, to: string, max = 12) {
   return out.slice(-max);
 }
 export function trailingMonths(n: number) {
-  const t = new Date(TODAY), out: string[] = [];
+  const [year, month] = todayInTirane().split("-").map(Number), t = new Date(year, month - 1, 1), out: string[] = [];
   for (let i = n - 1; i >= 0; i--) { const d = new Date(t.getFullYear(), t.getMonth() - i, 1); out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`); }
   return out;
 }

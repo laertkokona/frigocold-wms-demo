@@ -5,3 +5,8 @@ out
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
+.npm-cache
+.local-pg-test
+.env
+.vercel
+src/generated/prisma

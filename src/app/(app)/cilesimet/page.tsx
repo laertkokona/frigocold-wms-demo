@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
 import { toast } from "sonner";
-import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +9,7 @@ import { PageHeader } from "@/components/shell";
 import { useStore } from "@/lib/store";
 
 export default function Cilesimet() {
-  const { thresholds, setThresholds, products, resetDemo } = useStore();
+  const { thresholds, setThresholds, products } = useStore();
   const [t, setT] = useState(thresholds);
   return (
     <>
@@ -21,12 +20,10 @@ export default function Cilesimet() {
           <div><Label>Kartona minimum për lot</Label><Input type="number" value={t.lowShipmentCount} onChange={e => setT({ ...t, lowShipmentCount: +e.target.value })} /></div>
           <div className="pt-2 text-xs text-muted-foreground">Kg minimum për produkt (bosh = pa alarm)</div>
           {products.map(p => <div key={p.id} className="flex items-center gap-3"><span className="flex-1 text-sm">{p.name}</span><Input type="number" className="w-28" value={t.lowProductKg[p.id] ?? ""} onChange={e => setT({ ...t, lowProductKg: { ...t.lowProductKg, [p.id]: +e.target.value } })} /></div>)}
-          <Button variant="entry" className="w-full" onClick={() => { setThresholds(t); toast.success("Cilësimet u ruajtën"); }}>Ruaj cilësimet</Button>
+          <Button variant="entry" className="w-full" onClick={async () => { try { await setThresholds(t); toast.success("Cilësimet u ruajtën"); } catch (e) { toast.error(e instanceof Error ? e.message : "Cilësimet nuk u ruajtën"); } }}>Ruaj cilësimet</Button>
         </CardContent></Card>
-        <Card><CardHeader><CardTitle>Demo</CardTitle><CardDescription>Të dhënat ruhen lokalisht në këtë shfletues</CardDescription></CardHeader><CardContent className="space-y-3 text-sm text-muted-foreground">
-          <p>Çdo hyrje, shitje, klient apo produkt që shton ruhet në shfletuesin tënd dhe mbetet pas rifreskimit. Për të kthyer demon në gjendjen fillestare:</p>
-          <Button variant="outline" onClick={() => { resetDemo(); setT(useStore.getState().thresholds); toast("Të dhënat e demos u rikthyen"); }}><RotateCcw /> Rikthe të dhënat e demos</Button>
-          <p className="pt-2">Përdoruesi: <span className="font-mono">menaxher</span> · Fjalëkalimi: <span className="font-mono">frigocold</span></p>
+        <Card><CardHeader><CardTitle>Të dhënat</CardTitle><CardDescription>Ruhen në bazën e të dhënave</CardDescription></CardHeader><CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>Hyrjet, shitjet, klientët dhe produktet ruhen në server dhe janë të përbashkëta për përdoruesit e autorizuar.</p>
         </CardContent></Card>
       </div>
     </>

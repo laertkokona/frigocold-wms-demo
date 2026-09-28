@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: frigocold_demo
+      POSTGRES_USER: frigocold
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - frigocold_demo_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U frigocold -d frigocold_demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  frigocold_demo_db:
