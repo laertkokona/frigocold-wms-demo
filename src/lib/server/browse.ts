@@ -72,7 +72,8 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         UNION ALL
         SELECT sl.id, sa.date, 'OUT'::text, p.name, COALESCE(l.lots, ''), c.name,
-          sl.qty, sl.kg, sl.kg * sl.price_per_kg, sl.method
+          sl.qty, sl.kg, sl.kg * sl.price_per_kg,
+          CASE sl.method WHEN 'FIXED' THEN 'peshë fikse' WHEN 'VARIABLE' THEN 'peshë e ndryshme' WHEN 'TOTAL' THEN 'totali nga fatura' ELSE 'paleta' END
         FROM sale_lines sl JOIN sales sa ON sa.id = sl.sale_id
         JOIN shipments sh ON sh.id = sl.shipment_id JOIN products p ON p.id = sh.product_id
         JOIN clients c ON c.id = sa.client_id

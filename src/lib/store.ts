@@ -15,7 +15,7 @@ interface State extends Data {
   addShipment: (s: Omit<Shipment, "id" | "soldKg" | "soldCount"> & { entryDate?: string; draftId?: string; requestId: string }) => Promise<Shipment>;
   saveDraft: (d: Omit<Draft, "savedAt" | "id"> & { id?: string }) => Promise<Draft>;
   deleteDraft: (id: string) => Promise<void>;
-  finalizeSale: (s: Omit<Sale, "id" | "date"> & { requestId: string }) => Promise<Sale>;
+  finalizeSale: (s: Omit<Sale, "id" | "date"> & { requestId: string; date?: string }) => Promise<Sale>;
   setThresholds: (t: Thresholds) => Promise<void>;
 }
 
@@ -47,7 +47,7 @@ export const useStore = create<State>()((set) => {
     addShipment: ({ requestId, ...data }) => command<Shipment>("addShipment", data, undefined, requestId),
     saveDraft: data => command<Draft>("saveDraft", data),
     deleteDraft: async id => { await command("deleteDraft", undefined, id); },
-    finalizeSale: data => command<Sale>("finalizeSale", { clientId: data.clientId, lines: data.lines }, undefined, data.requestId),
+    finalizeSale: data => command<Sale>("finalizeSale", { clientId: data.clientId, lines: data.lines, ...(data.date ? { date: data.date } : {}) }, undefined, data.requestId),
     setThresholds: async data => { await command("setThresholds", data); },
   };
 });

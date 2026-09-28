@@ -1,7 +1,7 @@
 export type WeightType = "VARIABLE" | "FIXED" | "PALLET";
 export type LoadType = "CARTON" | "PALLET";
 export type DateMode = "FIXED" | "RANGE";
-export type SaleMethod = "FIXED" | "VARIABLE" | "PALLET";
+export type SaleMethod = "FIXED" | "VARIABLE" | "PALLET" | "TOTAL";
 
 export interface Product { id: string; name: string; weightType: WeightType; fixedKg?: number; origin?: string; }
 export interface Supplier { id: string; name: string; country: string; contact?: string; phone?: string; }

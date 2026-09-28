@@ -29,3 +29,8 @@ The new backend in this repository uses the revised contract. It keeps the impor
 
 Server calculations are authoritative: the browser may show a sale total for review, but the server stores only lines, weights, and prices and derives totals when reading. A shipment row is locked before its balance is checked and `OUT` movements are inserted.
 Receiving and sale requests carry an idempotency key so a repeat request after a lost response returns the original record. A key reused with different data is rejected.
+
+## Receipt-based sales and sale dates
+
+- Sale lines accept a fourth method, `TOTAL`, for sales registered later from a paper receipt: a unit count (cartons or pallets, following the shipment's load type) and the total kilograms, with no individual weights. The server rejects `weights`/`fixedKg` on a `TOTAL` line and applies the same kilogram and unit-count stock checks as the other methods. The movements list shows it as "totali nga fatura".
+- `finalizeSale` accepts an optional `date` (ISO `yyyy-mm-dd`) so a receipt entered later is booked on the day it was sold. It defaults to today in Europe/Tirane, may not be in the future, and may not precede the entry date of any shipment on the sale (`assertSaleDate` in `sale-rules.ts`). No schema change was needed: `sale_lines.method` and `sales.date` are already text columns.

@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { getDb } from "./db";
-import { assertAvailable, requiredStock } from "./sale-rules";
+import { assertAvailable, assertSaleDate, requiredStock } from "./sale-rules";
 
 export class DomainError extends Error {}
 const id = z.string().uuid();
@@ -23,7 +23,7 @@ const shipment = z.object({
 });
 
 const line = z.object({
-  productId: id, shipmentId: id, method: z.enum(["FIXED", "VARIABLE", "PALLET"]),
+  productId: id, shipmentId: id, method: z.enum(["FIXED", "VARIABLE", "PALLET", "TOTAL"]),
   qty: z.number().int().positive(), kg: positive, pricePerKg: nonnegative,
   weights: z.array(positive).optional(), fixedKg: positive.optional(),
 });
@@ -37,7 +37,7 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("addShipment"), data: shipment }),
   z.object({ type: z.literal("saveDraft"), data: z.object({ id: id.optional(), productId: id, data: z.record(z.string(), z.unknown()) }) }),
   z.object({ type: z.literal("deleteDraft"), id }),
-  z.object({ type: z.literal("finalizeSale"), data: z.object({ clientId: id, lines: z.array(line).min(1) }) }),
+  z.object({ type: z.literal("finalizeSale"), data: z.object({ clientId: id, lines: z.array(line).min(1), date: date.optional() }) }),
   z.object({ type: z.literal("setThresholds"), data: z.object({ expiryDays: count.max(3650), lowShipmentCount: count.max(100000), lowProductKg: z.record(z.string(), nonnegative) }) }),
 ]);
 
@@ -108,6 +108,8 @@ export async function executeCommand(command: Command, userId: string, requestId
     }
     case "finalizeSale": {
       const { clientId, lines } = command.data;
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Tirane" });
+      const saleDate = command.data.date ?? today;
       const required = requiredStock(lines);
       const ids = [...required.keys()].sort();
       const sale = await db.$transaction(async tx => {
@@ -115,14 +117,15 @@ export async function executeCommand(command: Command, userId: string, requestId
         if (!(await tx.client.findUnique({ where: { id: clientId }, select: { id: true } }))) throw new DomainError("Client not found");
         // The row locks serialize concurrent sales against the same shipments.
         for (const shipmentId of ids) await tx.$queryRaw`SELECT id FROM shipments WHERE id = ${shipmentId}::uuid FOR UPDATE`;
-        const shipments = await tx.shipment.findMany({ where: { id: { in: ids } }, select: { id: true, productId: true, countActual: true, netKgActual: true } });
+        const shipments = await tx.shipment.findMany({ where: { id: { in: ids } }, select: { id: true, productId: true, countActual: true, netKgActual: true, entryDate: true } });
         if (shipments.length !== ids.length) throw new DomainError("Shipment not found");
         const byId = new Map(shipments.map(s => [s.id, s]));
         for (const l of lines) if (byId.get(l.shipmentId)?.productId !== l.productId) throw new DomainError("Product does not match shipment");
+        assertSaleDate(saleDate, today, shipments.map(s => s.entryDate));
         const moved = await tx.movement.groupBy({ by: ["shipmentId"], where: { shipmentId: { in: ids } }, _sum: { kg: true, qty: true } });
         const balance = new Map(moved.map(m => [m.shipmentId, { kg: m._sum.kg?.toNumber() ?? 0, qty: m._sum.qty ?? 0 }]));
         assertAvailable(required, balance);
-        const created = await tx.sale.create({ data: { clientId, date: new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Tirane" }) } });
+        const created = await tx.sale.create({ data: { clientId, date: saleDate } });
         for (const l of lines) {
           await tx.saleLine.create({ data: { saleId: created.id, shipmentId: l.shipmentId, method: l.method, qty: l.qty, kg: l.kg, pricePerKg: l.pricePerKg, weights: l.weights ?? Prisma.JsonNull, fixedKg: l.fixedKg } });
           await tx.movement.create({ data: { shipmentId: l.shipmentId, saleId: created.id, userId, type: "OUT", kg: -l.kg, qty: -l.qty } });

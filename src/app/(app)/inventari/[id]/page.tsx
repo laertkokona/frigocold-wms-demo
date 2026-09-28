@@ -8,7 +8,7 @@ import { Banner } from "@/components/ui/banner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/shell";
 import { remainingCount, remainingKg, useStore } from "@/lib/store";
-import { daysUntil, fmtDate, fmtKg, fmtLek, fmtNum } from "@/lib/utils";
+import { daysUntil, fmtDate, fmtKg, fmtLek, fmtNum, saleMethodShort } from "@/lib/utils";
 
 export default function ShipmentDetail() {
   const { id } = useParams<{ id: string }>();
@@ -43,7 +43,7 @@ export default function ShipmentDetail() {
       </div>
       <Card className="mt-4"><CardHeader><CardTitle>Historia e daljeve</CardTitle></CardHeader><CardContent>
         {out.length === 0 && <p className="text-sm text-muted-foreground">Asnjë shitje ende nga ky lot.</p>}
-        {out.map((l, i) => <div key={i} className="flex flex-wrap items-center justify-between gap-2 border-b py-2.5 text-sm last:border-0"><div><div className="font-medium">{l.client}</div><div className="text-xs text-muted-foreground">{fmtDate(l.date)} · {l.qty} {unit} · {l.method === "FIXED" ? "peshë fikse" : l.method === "VARIABLE" ? "peshë e ndryshme" : "paleta"}</div></div><div className="text-right tabular"><div>{fmtKg(l.kg)}</div><div className="text-xs text-muted-foreground">{fmtNum(l.pricePerKg)} Lek/kg · {fmtLek(l.total)}</div></div></div>)}
+        {out.map((l, i) => <div key={i} className="flex flex-wrap items-center justify-between gap-2 border-b py-2.5 text-sm last:border-0"><div><div className="font-medium">{l.client}</div><div className="text-xs text-muted-foreground">{fmtDate(l.date)} · {l.qty} {unit} · {saleMethodShort(l.method)}</div></div><div className="text-right tabular"><div>{fmtKg(l.kg)}</div><div className="text-xs text-muted-foreground">{fmtNum(l.pricePerKg)} Lek/kg · {fmtLek(l.total)}</div></div></div>)}
       </CardContent></Card>
     </>
   );
