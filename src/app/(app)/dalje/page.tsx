@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PageHeader } from "@/components/shell";
 import { remainingCount, remainingKg, useStore } from "@/lib/store";
 import { fefoOrder } from "@/lib/calc";
+import { loadSpecLabel, loadWeightType } from "@/lib/stock";
 import type { Product, SaleLine, SaleMethod, Shipment } from "@/lib/types";
 import { cn, daysUntil, fmtDate, fmtKg, fmtLek, fmtMonth, fmtNum, saleMethodLabel, todayInTirane } from "@/lib/utils";
 
@@ -108,8 +109,8 @@ export default function DaljePage() {
           <div className="space-y-2">
             {store.products.map(p => { const sh = store.shipments.filter(s => s.productId === p.id && remainingKg(s) > 0); const kg = sh.reduce((a, s) => a + remainingKg(s), 0); if (!sh.length) return null; return (
               <button key={p.id} onClick={() => { setProduct(p); setStep("shipment"); }} className="flex w-full items-center justify-between rounded-lg border bg-card px-4 py-3.5 text-left transition-colors hover:border-exit/60">
-                <div><div className="text-sm font-medium">{p.name}</div><div className="text-xs text-muted-foreground">{sh.length} dërgesa · {fmtKg(kg, 0)}{p.fixedKg ? ` · ${p.fixedKg} kg/karton` : ""}</div></div>
-                <div className="flex items-center gap-2"><Badge variant={p.weightType === "PALLET" ? "warn" : p.weightType === "FIXED" ? "entry" : "exit"}>{p.weightType === "PALLET" ? "paleta" : p.weightType === "FIXED" ? "peshë fikse" : "peshë variabile"}</Badge><ChevronRight className="h-4 w-4 text-muted-foreground" /></div>
+                <div><div className="text-sm font-medium">{p.name}</div><div className="text-xs text-muted-foreground">{sh.length} ngarkesa · {fmtKg(kg, 0)}</div></div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </button>); })}
           </div>
         </motion.div>
@@ -121,26 +122,26 @@ export default function DaljePage() {
           <Banner tone="warn" className="mb-4">Rendi FEFO — dërgesa me skadim më të afërt duhet shitur e para. Rekomandimi nuk është detyrim.</Banner>
           <div className="space-y-2">
             {fefo.map((s, i) => { const d = daysUntil(s.expFrom); const sup = store.suppliers.find(x => x.id === s.supplierId); return (
-              <button key={s.id} onClick={() => { setShip(s); setMethod(product.weightType === "PALLET" ? "PALLET" : product.weightType === "FIXED" ? "FIXED" : "VARIABLE"); setStep("method"); }} className={cn("flex w-full items-center justify-between rounded-lg border bg-card px-4 py-3.5 text-left transition-colors hover:border-exit/60", i === 0 && "border-danger/40")}>
-                <div><div className="text-sm font-medium">Lot {lotOf(s)} · {sup?.name}</div><div className="text-xs text-muted-foreground">Porosia {s.orderNr} · {remainingCount(s)} {s.loadType === "PALLET" ? "paleta" : "kartona"} · {fmtKg(remainingKg(s), 1)} · skadon {fmtMonth(s.expFrom)}</div></div>
+              <button key={s.id} onClick={() => { setShip(s); setMethod(loadWeightType(s)); setStep("method"); }} className={cn("flex w-full items-center justify-between rounded-lg border bg-card px-4 py-3.5 text-left transition-colors hover:border-exit/60", i === 0 && "border-danger/40")}>
+                <div><div className="text-sm font-medium">Lot {lotOf(s)} · {sup?.name}</div><div className="text-xs text-muted-foreground">{loadSpecLabel(s)}</div><div className="text-xs text-muted-foreground">Porosia {s.orderNr} · {remainingCount(s)} {s.loadType === "PALLET" ? "paleta" : "kartona"} · {fmtKg(remainingKg(s), 1)} · skadon {fmtMonth(s.expFrom)}</div></div>
                 {i === 0 ? <Badge variant="solid">shit i pari · {d} ditë</Badge> : <Badge variant="entry">{fmtMonth(s.expFrom)}</Badge>}
               </button>); })}
           </div>
         </motion.div>
       )}
 
-      {step === "method" && product && ship && (
+      {step === "method" && product && ship && (() => { const wt = loadWeightType(ship); return (
         <motion.div key="method" {...fade}>
           <PageHeader title="Si do të llogaritet pesha?" right={<Button variant="ghost" onClick={() => setStep("shipment")}><ArrowLeft /></Button>} />
-          <Banner className="mb-4">{product.weightType === "FIXED" ? `${product.name} ka peshë fikse (${product.fixedKg} kg/karton) — rekomandohet metoda e shpejtë.` : product.weightType === "PALLET" ? "Ky produkt vjen mbi paleta." : `${product.name} ka peshë të ndryshme për karton — shkruaj secilën peshë.`}</Banner>
+          <Banner className="mb-4">{wt === "FIXED" ? `Kjo ngarkesë ka peshë fikse (${ship.fixedKg} kg/karton) — rekomandohet metoda e shpejtë.` : wt === "PALLET" ? "Kjo ngarkesë vjen mbi paleta." : "Kjo ngarkesë ka peshë të ndryshme për karton — shkruaj secilën peshë, ose totalin nga fatura."}</Banner>
           <div className="max-w-xl space-y-3">
-            {product.weightType !== "PALLET" && <MethodCard icon={Equal} title="Peshë fikse për karton" desc="Të gjithë kartonët kanë të njëjtën peshë. Fut peshën një herë dhe numrin e kartonave — sistemi shumëzon." rec={product.weightType === "FIXED"} onClick={() => { setMethod("FIXED"); setFixedKg(String(product.fixedKg ?? "")); setFixedN(String(Math.min(40, remainingCount(ship)))); setStep("fixed"); }} />}
-            {product.weightType !== "PALLET" && <MethodCard icon={Keyboard} title="Peshë e ndryshme për karton" desc="Çdo karton ka peshë tjetër. Shkruaj peshat me tastierë të shpejtë — sistemi i mbledh vetë." rec={product.weightType === "VARIABLE"} onClick={() => { setMethod("VARIABLE"); setWeights([]); setBuf(""); setStep("format"); }} />}
-            {product.weightType === "PALLET" && <MethodCard icon={Layers} title="Peshë për secilën paletë" desc="Fut peshën e secilës paletë veç e veç." rec onClick={() => { setMethod("PALLET"); setPallets(["", "", ""]); setStep("pallet"); }} />}
-            {product.weightType !== "FIXED" && <MethodCard icon={Receipt} title="Totali nga fatura" desc={product.weightType === "PALLET" ? "Regjistrim nga fatura e shitjes: fut numrin e paletave dhe peshën totale — pa peshat e secilës paletë." : "Regjistrim nga fatura e shitjes: fut numrin e kartonave dhe peshën totale — pa peshat e secilit karton."} onClick={() => { setMethod("TOTAL"); setTotN(""); setTotKg(""); setStep("total"); }} />}
+            {wt !== "PALLET" && <MethodCard icon={Equal} title="Peshë fikse për karton" desc="Të gjithë kartonët kanë të njëjtën peshë. Fut peshën një herë dhe numrin e kartonave — sistemi shumëzon." rec={wt === "FIXED"} onClick={() => { setMethod("FIXED"); setFixedKg(String(ship.fixedKg ?? "")); setFixedN(String(Math.min(40, remainingCount(ship)))); setStep("fixed"); }} />}
+            {wt !== "PALLET" && <MethodCard icon={Keyboard} title="Peshë e ndryshme për karton" desc="Çdo karton ka peshë tjetër. Shkruaj peshat me tastierë të shpejtë — sistemi i mbledh vetë." rec={wt === "VARIABLE"} onClick={() => { setMethod("VARIABLE"); setWeights([]); setBuf(""); setStep("format"); }} />}
+            {wt === "PALLET" && <MethodCard icon={Layers} title="Peshë për secilën paletë" desc="Fut peshën e secilës paletë veç e veç." rec onClick={() => { setMethod("PALLET"); setPallets(["", "", ""]); setStep("pallet"); }} />}
+            {wt !== "FIXED" && <MethodCard icon={Receipt} title="Totali nga fatura" desc={wt === "PALLET" ? "Regjistrim nga fatura e shitjes: fut numrin e paletave dhe peshën totale — pa peshat e secilës paletë." : "Regjistrim nga fatura e shitjes: fut numrin e kartonave dhe peshën totale — pa peshat e secilit karton."} onClick={() => { setMethod("TOTAL"); setTotN(""); setTotKg(""); setStep("total"); }} />}
           </div>
         </motion.div>
-      )}
+      ); })()}
 
       {step === "fixed" && product && ship && (() => { const w = +fixedKg || 0, n = +fixedN || 0, over = n > remainingCount(ship); return (
         <motion.div key="fixed" {...fade}>

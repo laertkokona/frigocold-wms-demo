@@ -22,11 +22,12 @@ export default function ShipmentDetail() {
   const Row = ({ k, v }: { k: string; v: React.ReactNode }) => <div className="flex justify-between border-b py-2 text-sm last:border-0"><span className="text-muted-foreground">{k}</span><span className="font-medium tabular">{v}</span></div>;
   return (
     <>
-      <PageHeader title={`Lot ${s.lots.map(l => l.lotNumber).join(", ")} · ${p?.name}`} sub={`Porosia ${s.orderNr} · ${sup?.name} (${sup?.country})`} right={<Button asChild variant="ghost"><Link href="/inventari"><ArrowLeft /> Stoku</Link></Button>} />
+      <PageHeader title={`Lot ${s.lots.map(l => l.lotNumber).join(", ")} · ${p?.name}`} sub={`Porosia ${s.orderNr} · ${sup?.name} (${sup?.country})`} right={<Button asChild variant="ghost"><Link href={`/produktet/${s.productId}`}><ArrowLeft /> {p?.name ?? "Stoku"}</Link></Button>} />
       {d <= 90 && remainingKg(s) > 0 && <Banner tone={d <= 30 ? "danger" : "warn"} className="mb-4">{d < 0 ? "Ky lot ka skaduar." : `Skadon për ${d} ditë`} — {fmtKg(remainingKg(s), 1)} mbeten. Shit i pari.</Banner>}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card><CardHeader><CardTitle>Të dhënat e dërgesës</CardTitle></CardHeader><CardContent>
-          <Row k="Data e hyrjes" v={fmtDate(s.entryDate)} /><Row k="Forma" v={s.loadType === "PALLET" ? "Paleta" : "Kartona"} />
+          <Row k="Data e hyrjes" v={fmtDate(s.entryDate)} /><Row k="Pesha" v={s.loadType === "PALLET" ? "Paleta" : s.fixedKg ? `Kartona me peshë fikse ${s.fixedKg} kg` : "Kartona me peshë të ndryshme"} />
+          {s.origin && <Row k="Origjina" v={s.origin} />}{s.specs && <Row k="Specifikime" v={s.specs} />}
           <Row k="Sasia (dokument / faktik)" v={<span>{s.countDoc} / {s.countActual} {unit}{s.countDoc !== s.countActual && <Badge variant="warn" className="ml-2">{s.countActual - s.countDoc > 0 ? "+" : ""}{s.countActual - s.countDoc}</Badge>}</span>} />
           <Row k="Pesha (dokument / faktike)" v={<span>{fmtNum(s.netKgDoc, 1)} / {fmtNum(s.netKgActual, 1)} kg{s.netKgDoc !== s.netKgActual && <Badge variant="warn" className="ml-2">{(s.netKgActual - s.netKgDoc).toFixed(1)} kg</Badge>}</span>} />
           <Row k="Lotet" v={s.lots.map(l => `${l.lotNumber} (${l.qty})`).join(", ")} />

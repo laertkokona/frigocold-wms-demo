@@ -24,7 +24,7 @@ async function main() {
   const suppliers = new Map<string, string>();
   const clients = new Map<string, string>();
   const shipments = new Map<string, string>();
-  for (const p of demo.products) products.set(p.id, (await db.product.create({ data: { name: p.name, weightType: p.weightType, fixedKg: p.fixedKg, origin: p.origin } })).id);
+  for (const p of demo.products) products.set(p.id, (await db.product.create({ data: { name: p.name, weightType: p.weightType ?? "VARIABLE", fixedKg: p.fixedKg, origin: p.origin } })).id);
   for (const s of demo.suppliers) suppliers.set(s.id, (await db.supplier.create({ data: { name: s.name, country: s.country, contact: s.contact, phone: s.phone } })).id);
   for (const c of demo.clients) clients.set(c.id, (await db.client.create({ data: { name: c.name, city: c.city, contact: c.contact, phone: c.phone } })).id);
   for (const s of demo.shipments) {
@@ -33,6 +33,7 @@ async function main() {
       loadType: s.loadType, countDoc: s.countDoc, countActual: s.countActual, netKgDoc: s.netKgDoc,
       netKgActual: s.netKgActual, costPerKg: s.costPerKg, dateMode: s.dateMode, prodFrom: s.prodFrom,
       prodTo: s.prodTo, expFrom: s.expFrom, expTo: s.expTo, entryDate: s.entryDate,
+      ...(() => { const p = demo.products.find(x => x.id === s.productId); return { fixedKg: p?.weightType === "FIXED" && s.loadType === "CARTON" ? p.fixedKg : undefined, origin: p?.origin }; })(),
       lots: { create: s.lots.map(l => ({ lotNumber: l.lotNumber, qty: l.qty })) },
     } });
     shipments.set(s.id, row.id);

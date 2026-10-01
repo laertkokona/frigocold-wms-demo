@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useStore } from "@/lib/store";
-import type { Client, Supplier } from "@/lib/types";
+import type { Client, Product, Supplier } from "@/lib/types";
 
 async function compactCommand(type: string, data: unknown, id?: string): Promise<string> {
   const response = await fetch("/api/commands", {
@@ -77,6 +77,34 @@ export function SupplierDialog({ open, onClose, supplier, onSaved, compact = fal
           </div>
           <div><Label>Personi i kontaktit</Label><Input value={f.contact} onChange={e => setF({ ...f, contact: e.target.value })} /></div>
           <Button className="w-full" disabled={!f.name.trim()} onClick={save}>{supplier ? "Ruaj ndryshimet" : "Shto furnizuesin"}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Add or rename a product category (e.g. "Kofshë pule"). Loads with their own specs go under it via Hyrje. */
+export function ProductDialog({ open, onClose, product, onSaved }: { open: boolean; onClose: () => void; product?: Product; onSaved?: (p: Product) => void }) {
+  const { addProduct, updateProduct, products } = useStore();
+  const [name, setName] = useState("");
+  useEffect(() => { if (open) setName(product?.name ?? ""); }, [open, product]);
+  const clash = products.some(p => p.id !== product?.id && p.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const save = async () => {
+    try {
+      if (product) { await updateProduct(product.id, { name: name.trim() }); toast.success("Kategoria u riemërtua"); onSaved?.({ ...product, name: name.trim() }); }
+      else { const p = await addProduct({ name: name.trim() }); toast.success("Kategoria u krijua"); onSaved?.(p); }
+      onClose();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Ruajtja dështoi"); }
+  };
+  return (
+    <Dialog open={open} onOpenChange={o => !o && onClose()}>
+      <DialogContent>
+        <DialogTitle>{product ? "Riemërto kategorinë" : "Kategori e re produkti"}</DialogTitle>
+        <DialogDescription>Kategoria mbledh të gjitha ngarkesat e të njëjtit produkt, nga çdo furnizues. Specifikimet (origjina, pesha e kartonave, marka) plotësohen te secila ngarkesë.</DialogDescription>
+        <div className="mt-4 space-y-3">
+          <div><Label>Emri i kategorisë <span className="text-danger">*</span></Label><Input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && name.trim() && !clash && save()} placeholder="p.sh. Kofshë pule" />
+            {clash && <p className="mt-1 text-[11px] text-warn">Kjo kategori ekziston tashmë.</p>}</div>
+          <Button className="w-full" disabled={!name.trim() || clash} onClick={save}>{product ? "Ruaj emrin" : "Krijo kategorinë"}</Button>
         </div>
       </DialogContent>
     </Dialog>

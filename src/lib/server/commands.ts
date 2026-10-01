@@ -20,6 +20,7 @@ const shipment = z.object({
   netKgDoc: nonnegative, netKgActual: positive, lots: z.array(lot).min(1), costPerKg: positive,
   dateMode: z.enum(["FIXED", "RANGE"]), prodFrom: date.or(z.literal("")), prodTo: date.optional(),
   expFrom: date, expTo: date.optional(), entryDate: date,
+  fixedKg: positive.optional(), origin: z.string().trim().max(100).optional(), specs: z.string().trim().max(200).optional(),
 });
 
 const line = z.object({
@@ -29,7 +30,8 @@ const line = z.object({
 });
 
 export const commandSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("addProduct"), data: z.object({ name, weightType: z.enum(["VARIABLE", "FIXED", "PALLET"]), fixedKg: positive.optional(), origin: z.string().max(100).optional() }) }),
+  z.object({ type: z.literal("addProduct"), data: z.object({ name, weightType: z.enum(["VARIABLE", "FIXED", "PALLET"]).optional(), fixedKg: positive.optional(), origin: z.string().max(100).optional() }) }),
+  z.object({ type: z.literal("updateProduct"), id, data: z.object({ name }) }),
   z.object({ type: z.literal("addSupplier"), data: z.object({ name, country: z.string().trim().max(100), contact: z.string().max(150).optional(), phone: z.string().max(50).optional() }) }),
   z.object({ type: z.literal("addClient"), data: z.object({ name, city: z.string().trim().max(100), contact: z.string().max(150).optional(), phone: z.string().max(50).optional() }) }),
   z.object({ type: z.literal("updateSupplier"), id, data: z.object({ name: name.optional(), country: z.string().trim().max(100).optional(), contact: z.string().max(150).optional(), phone: z.string().max(50).optional() }) }),
@@ -49,6 +51,7 @@ function validateShipment(s: z.infer<typeof shipment>) {
   if (s.lots.reduce((n, l) => n + l.qty, 0) !== s.countActual) throw new DomainError("Lot quantities must equal received units");
   if (s.dateMode === "RANGE" && (!s.expTo || s.expTo < s.expFrom || (s.prodTo && s.prodTo < s.prodFrom))) throw new DomainError("Invalid date range");
   if (s.expFrom < s.prodFrom) throw new DomainError("Expiry date precedes production date");
+  if (s.fixedKg && s.loadType !== "CARTON") throw new DomainError("Fixed carton weight applies only to carton loads");
 }
 
 export async function executeCommand(command: Command, userId: string, requestId?: string) {
@@ -66,8 +69,12 @@ export async function executeCommand(command: Command, userId: string, requestId
   switch (command.type) {
     case "addProduct": {
       if (command.data.weightType === "FIXED" && !command.data.fixedKg) throw new DomainError("Fixed weight is required");
-      const row = await db.product.create({ data: command.data });
+      const { weightType, ...rest } = command.data;
+      const row = await db.product.create({ data: { ...rest, weightType: weightType ?? "VARIABLE" } });
       return { id: row.id };
+    }
+    case "updateProduct": {
+      const row = await db.product.update({ where: { id: command.id }, data: command.data }); return { id: row.id };
     }
     case "addSupplier": { const row = await db.supplier.create({ data: command.data }); return { id: row.id }; }
     case "addClient": { const row = await db.client.create({ data: command.data }); return { id: row.id }; }
@@ -87,6 +94,7 @@ export async function executeCommand(command: Command, userId: string, requestId
           countDoc: s.countDoc, countActual: s.countActual, netKgDoc: s.netKgDoc, netKgActual: s.netKgActual,
           costPerKg: s.costPerKg, dateMode: s.dateMode, prodFrom: s.prodFrom, prodTo: s.prodTo,
           expFrom: s.expFrom, expTo: s.expTo, entryDate: s.entryDate,
+          fixedKg: s.fixedKg, origin: s.origin || undefined, specs: s.specs || undefined,
           lots: { create: s.lots },
         } });
         await tx.movement.create({ data: { shipmentId: created.id, userId, type: "IN", kg: s.netKgActual, qty: s.countActual } });

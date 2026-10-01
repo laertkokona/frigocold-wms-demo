@@ -36,7 +36,7 @@ model Operation {
 model Product {
   id         String     @id @default(uuid()) @db.Uuid
   name       String     @unique @db.VarChar(150)
-  weightType String     @map("weight_type") @db.VarChar(20)
+  weightType String     @default("VARIABLE") @map("weight_type") @db.VarChar(20)
   fixedKg    Decimal?   @map("fixed_kg") @db.Decimal(10, 3)
   origin     String?    @db.VarChar(100)
   shipments  Shipment[]
@@ -80,6 +80,9 @@ model Shipment {
   expFrom     String    @map("exp_from") @db.VarChar(10)
   expTo       String?   @map("exp_to") @db.VarChar(10)
   entryDate   String    @map("entry_date") @db.VarChar(10)
+  fixedKg     Decimal?  @map("fixed_kg") @db.Decimal(10, 3)
+  origin      String?   @db.VarChar(100)
+  specs       String?   @db.VarChar(200)
   createdAt   DateTime  @default(now()) @map("created_at")
   product     Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
   supplier    Supplier  @relation(fields: [supplierId], references: [id], onDelete: Restrict)

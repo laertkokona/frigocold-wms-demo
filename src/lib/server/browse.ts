@@ -49,13 +49,14 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         sh.net_kg_actual AS "netKgActual", sh.cost_per_kg AS "costPerKg",
         sh.entry_date, sh.exp_from AS expiry,
         COALESCE(b.kg, 0) AS remaining_kg, COALESCE(b.qty, 0)::int AS remaining_count,
-        COALESCE(l.lots, '') AS lots
+        COALESCE(l.lots, '') AS lots, sh.fixed_kg AS "fixedKg", sh.origin, sh.specs
       FROM shipments sh JOIN products p ON p.id = sh.product_id
       JOIN suppliers su ON su.id = sh.supplier_id
       LEFT JOIN (SELECT shipment_id, SUM(kg) AS kg, SUM(qty) AS qty FROM movements GROUP BY shipment_id) b ON b.shipment_id = sh.id
       LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
       WHERE COALESCE(b.kg, 0) > 0 AND (
         p.name ILIKE ${match} OR su.name ILIKE ${match} OR sh.order_nr ILIKE ${match}
+        OR sh.origin ILIKE ${match} OR sh.specs ILIKE ${match}
         OR sh.entry_date ILIKE ${dateMatch} OR EXISTS (
           SELECT 1 FROM shipment_lots fl WHERE fl.shipment_id = sh.id AND fl.lot_number ILIKE ${match}
         )

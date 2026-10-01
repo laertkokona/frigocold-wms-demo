@@ -3,7 +3,8 @@ export type LoadType = "CARTON" | "PALLET";
 export type DateMode = "FIXED" | "RANGE";
 export type SaleMethod = "FIXED" | "VARIABLE" | "PALLET" | "TOTAL";
 
-export interface Product { id: string; name: string; weightType: WeightType; fixedKg?: number; origin?: string; }
+/** A product category (e.g. "Kofshë pule"). Weight spec lives on each load (Shipment). weightType/fixedKg/origin are legacy defaults. */
+export interface Product { id: string; name: string; weightType?: WeightType; fixedKg?: number; origin?: string; }
 export interface Supplier { id: string; name: string; country: string; contact?: string; phone?: string; }
 export interface Client { id: string; name: string; city: string; contact?: string; phone?: string; }
 export interface LotAlloc { lotNumber: string; qty: number; }
@@ -27,6 +28,9 @@ export interface Shipment {
   expFrom: string;        // ISO — earliest expiry drives alerts/FEFO
   expTo?: string;
   entryDate: string;      // ISO — prefilled with today, editable by the user
+  fixedKg?: number;       // set → cartons all weigh this much; unset carton load → variable weights
+  origin?: string;        // country / plant of this load
+  specs?: string;         // free text: brand, cut, calibre, packaging…
   soldKg: number;
   soldCount: number;
 }

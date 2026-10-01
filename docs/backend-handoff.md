@@ -34,3 +34,9 @@ Receiving and sale requests carry an idempotency key so a repeat request after a
 
 - Sale lines accept a fourth method, `TOTAL`, for sales registered later from a paper receipt: a unit count (cartons or pallets, following the shipment's load type) and the total kilograms, with no individual weights. The server rejects `weights`/`fixedKg` on a `TOTAL` line and applies the same kilogram and unit-count stock checks as the other methods. The movements list shows it as "totali nga fatura".
 - `finalizeSale` accepts an optional `date` (ISO `yyyy-mm-dd`) so a receipt entered later is booked on the day it was sold. It defaults to today in Europe/Tirane, may not be in the future, and may not precede the entry date of any shipment on the sale (`assertSaleDate` in `sale-rules.ts`). No schema change was needed: `sale_lines.method` and `sales.date` are already text columns.
+
+## Product categories and per-load specs (migration `20261001000000_load_specs`)
+
+- A product is now a category (e.g. "Kofshë pule"). Categories are created and renamed on the new Produktet page (`addProduct` needs only a name; `updateProduct` renames). `products.weight_type`, `fixed_kg` and `origin` remain as legacy defaults only.
+- Each load (shipment) carries its own spec: `fixed_kg` (set → fixed-weight cartons, unset carton load → variable weights, pallet load → pallets), `origin`, and free-text `specs` (brand, cut, calibre). The server rejects `fixedKg` on a pallet load. Sales recommend the weighing method from the chosen load (`loadWeightType` in `src/lib/stock.ts`).
+- The migration is additive and copies the old product-level spec onto existing loads. **Run `npm run db:deploy` against each environment's database before deploying this version**: the app reads the new columns.

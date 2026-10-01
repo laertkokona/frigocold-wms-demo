@@ -10,6 +10,7 @@ interface State extends Data {
   addProduct: (p: Omit<Product, "id">) => Promise<Product>;
   addSupplier: (s: Omit<Supplier, "id">) => Promise<Supplier>;
   addClient: (c: Omit<Client, "id">) => Promise<Client>;
+  updateProduct: (id: string, patch: { name: string }) => Promise<void>;
   updateClient: (id: string, patch: Partial<Omit<Client, "id">>) => Promise<void>;
   updateSupplier: (id: string, patch: Partial<Omit<Supplier, "id">>) => Promise<void>;
   addShipment: (s: Omit<Shipment, "id" | "soldKg" | "soldCount"> & { entryDate?: string; draftId?: string; requestId: string }) => Promise<Shipment>;
@@ -42,6 +43,7 @@ export const useStore = create<State>()((set) => {
     addProduct: data => command<Product>("addProduct", data),
     addSupplier: data => command<Supplier>("addSupplier", data),
     addClient: data => command<Client>("addClient", data),
+    updateProduct: async (id, data) => { await command("updateProduct", data, id); },
     updateClient: async (id, data) => { await command("updateClient", data, id); },
     updateSupplier: async (id, data) => { await command("updateSupplier", data, id); },
     addShipment: ({ requestId, ...data }) => command<Shipment>("addShipment", data, undefined, requestId),

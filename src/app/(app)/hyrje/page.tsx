@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, CalendarCheck, Check, ChevronRight, ClipboardList, Plus, Save, Search, Trash2, X } from "lucide-react";
@@ -10,11 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Banner } from "@/components/ui/banner";
 import { Segmented } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/shell";
-import { SupplierDialog } from "@/components/entity-dialogs";
+import { ProductDialog, SupplierDialog } from "@/components/entity-dialogs";
 import { remainingKg, useStore } from "@/lib/store";
-import type { DateMode, Draft, LoadType, LotAlloc, Product, WeightType } from "@/lib/types";
+import { loadSpecLabel } from "@/lib/stock";
+import type { DateMode, Draft, LoadType, LotAlloc, Product } from "@/lib/types";
 import { cn, fmtDate, fmtKg, fmtLek, fmtNum, todayInTirane } from "@/lib/utils";
 
 type Step = "product" | "form" | "review" | "done";
@@ -22,12 +22,13 @@ type CostUnit = "kg" | "ton";
 
 interface Form {
   orderNr: string; supplierId: string; entryDate: string; loadType: LoadType;
+  weighMode: "VARIABLE" | "FIXED"; fixedKg: string; origin: string; specs: string;
   countDoc: string; countActual: string; netKgDoc: string; netKgActual: string;
   lots: { lotNumber: string; qty: string }[];
   costUnit: CostUnit; costVal: string;
   dateMode: DateMode; prodFrom: string; prodTo: string; expFrom: string; expTo: string;
 }
-const emptyForm = (): Form => ({ orderNr: "", supplierId: "", entryDate: todayInTirane(), loadType: "CARTON", countDoc: "", countActual: "", netKgDoc: "", netKgActual: "", lots: [{ lotNumber: "", qty: "" }], costUnit: "kg", costVal: "", dateMode: "FIXED", prodFrom: "", prodTo: "", expFrom: "", expTo: "" });
+const emptyForm = (): Form => ({ orderNr: "", supplierId: "", entryDate: todayInTirane(), loadType: "CARTON", weighMode: "VARIABLE", fixedKg: "", origin: "", specs: "", countDoc: "", countActual: "", netKgDoc: "", netKgActual: "", lots: [{ lotNumber: "", qty: "" }], costUnit: "kg", costVal: "", dateMode: "FIXED", prodFrom: "", prodTo: "", expFrom: "", expTo: "" });
 
 const fade = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.18 } };
 
@@ -40,6 +41,7 @@ export default function HyrjePage() {
   const [q, setQ] = useState("");
   const [newProd, setNewProd] = useState(false);
   const [newSup, setNewSup] = useState(false);
+  const [prefilled, setPrefilled] = useState<string | null>(null);
   const [saved, setSaved] = useState<{ count: number; kg: number; total: number } | null>(null);
   const requestId = useRef<string | null>(null);
 
@@ -49,12 +51,32 @@ export default function HyrjePage() {
   const total = wAct * perKg;
   const lotSum = form.lots.reduce((a, l) => a + (+l.qty || 0), 0);
   const avg = cntAct > 0 ? wAct / cntAct : 0;
+  const isFixed = form.loadType === "CARTON" && form.weighMode === "FIXED", fixedKg = isFixed ? +form.fixedKg || 0 : 0;
+  const specOf = { loadType: form.loadType, fixedKg: fixedKg || undefined, origin: form.origin.trim() || undefined, specs: form.specs.trim() || undefined };
   const set = (patch: Partial<Form>) => { requestId.current = null; setForm(f => ({ ...f, ...patch })); };
 
   const filtered = useMemo(() => store.products.filter(p => p.name.toLowerCase().includes(q.toLowerCase())), [q, store.products]);
   const stockOf = (p: Product) => store.shipments.filter(s => s.productId === p.id && remainingKg(s) > 0);
 
-  const pick = (p: Product) => { requestId.current = null; setProduct(p); setForm(emptyForm()); setDraftId(null); setStep("form"); };
+  const pick = (p: Product) => { requestId.current = null; setProduct(p); setForm(emptyForm()); setPrefilled(null); setDraftId(null); setStep("form"); };
+  // /hyrje?product=<id> (from a category page) opens the load form for that category directly.
+  const [autoPicked, setAutoPicked] = useState(false);
+  useEffect(() => {
+    if (autoPicked || !store.products.length) return;
+    setAutoPicked(true);
+    const id = new URLSearchParams(window.location.search).get("product");
+    const p = id ? store.products.find(x => x.id === id) : undefined;
+    if (p) pick(p);
+  }, [store.products, autoPicked]);
+  // Choosing a supplier copies the spec of this category's last load from that supplier (if the spec is still blank).
+  const chooseSupplier = (supplierId: string) => {
+    const last = product ? [...store.shipments].filter(x => x.productId === product.id && x.supplierId === supplierId).sort((a, b) => b.entryDate.localeCompare(a.entryDate))[0] : undefined;
+    const blank = !form.fixedKg && !form.origin && !form.specs && form.weighMode === "VARIABLE" && form.loadType === "CARTON";
+    if (last && blank) {
+      set({ supplierId, loadType: last.loadType, weighMode: last.fixedKg ? "FIXED" : "VARIABLE", fixedKg: last.fixedKg ? String(last.fixedKg) : "", origin: last.origin ?? "", specs: last.specs ?? "" });
+      setPrefilled(fmtDate(last.entryDate));
+    } else { set({ supplierId }); setPrefilled(null); }
+  };
   const resume = (d: Draft) => {
     requestId.current = null;
     const p = store.products.find(x => x.id === d.productId); if (!p) return;
@@ -62,6 +84,7 @@ export default function HyrjePage() {
     setProduct(p); setDraftId(d.id);
     setForm({
       orderNr: x.orderNr ?? "", supplierId: x.supplierId ?? "", entryDate: x.entryDate ?? todayInTirane(), loadType: x.loadType ?? "CARTON",
+      weighMode: x.fixedKg ? "FIXED" : "VARIABLE", fixedKg: x.fixedKg ? String(x.fixedKg) : "", origin: x.origin ?? "", specs: x.specs ?? "",
       countDoc: x.countDoc?.toString() ?? "", countActual: x.countActual?.toString() ?? "", netKgDoc: x.netKgDoc?.toString() ?? "", netKgActual: x.netKgActual?.toString() ?? "",
       lots: (x.lots?.length ? x.lots : [{ lotNumber: "", qty: 0 }]).map(l => ({ lotNumber: l.lotNumber, qty: l.qty ? String(l.qty) : "" })),
       costUnit: "kg", costVal: x.costPerKg?.toString() ?? "",
@@ -70,32 +93,32 @@ export default function HyrjePage() {
     setStep("form"); toast("Drafti u rikthye — vazhdo aty ku e le");
   };
   const toDraftData = () => ({
-    orderNr: form.orderNr, supplierId: form.supplierId, entryDate: form.entryDate, loadType: form.loadType,
+    orderNr: form.orderNr, supplierId: form.supplierId, entryDate: form.entryDate, ...specOf,
     countDoc: cntDoc, countActual: cntAct, netKgDoc: wDoc, netKgActual: wAct,
     lots: form.lots.filter(l => l.lotNumber).map(l => ({ lotNumber: l.lotNumber, qty: +l.qty || 0 })),
     costPerKg: perKg, totalCost: total, dateMode: form.dateMode,
     prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined,
   });
   const saveDraft = async () => { if (!product) return; try { const d = await store.saveDraft({ id: draftId ?? undefined, productId: product.id, data: toDraftData() }); setDraftId(d.id); toast.success("Drafti u ruajt"); setStep("product"); } catch (e) { toast.error(e instanceof Error ? e.message : "Drafti nuk u ruajt"); } };
-  const canReview = form.orderNr && form.supplierId && form.entryDate && cntAct > 0 && wAct > 0 && perKg > 0 && form.expFrom && lotSum === cntAct && form.lots.every(l => l.lotNumber.trim());
+  const canReview = form.orderNr && form.supplierId && form.entryDate && cntAct > 0 && wAct > 0 && perKg > 0 && form.expFrom && (!isFixed || fixedKg > 0) && lotSum === cntAct && form.lots.every(l => l.lotNumber.trim());
   const finalize = async () => {
     if (!product) return;
     const lots: LotAlloc[] = form.lots.filter(l => l.lotNumber).map(l => ({ lotNumber: l.lotNumber, qty: +l.qty || 0 }));
     try {
       requestId.current ??= crypto.randomUUID();
-      await store.addShipment({ productId: product.id, supplierId: form.supplierId, orderNr: form.orderNr, entryDate: form.entryDate, loadType: form.loadType, countDoc: cntDoc, countActual: cntAct, netKgDoc: wDoc, netKgActual: wAct, lots, costPerKg: perKg, totalCost: total, dateMode: form.dateMode, prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined, draftId: draftId ?? undefined, requestId: requestId.current });
+      await store.addShipment({ productId: product.id, supplierId: form.supplierId, orderNr: form.orderNr, entryDate: form.entryDate, ...specOf, countDoc: cntDoc, countActual: cntAct, netKgDoc: wDoc, netKgActual: wAct, lots, costPerKg: perKg, totalCost: total, dateMode: form.dateMode, prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined, draftId: draftId ?? undefined, requestId: requestId.current });
       requestId.current = null;
       setSaved({ count: cntAct, kg: wAct, total }); setStep("done"); toast.success("Dërgesa u regjistrua");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Dërgesa nuk u regjistrua"); }
   };
-  const reset = () => { requestId.current = null; setStep("product"); setProduct(null); setForm(emptyForm()); setDraftId(null); setSaved(null); };
+  const reset = () => { requestId.current = null; setPrefilled(null); setStep("product"); setProduct(null); setForm(emptyForm()); setDraftId(null); setSaved(null); };
   const supplier = store.suppliers.find(s => s.id === form.supplierId);
 
   return (
     <AnimatePresence mode="wait">
       {step === "product" && (
         <motion.div key="product" {...fade}>
-          <PageHeader title="Hyrje e re" sub="Zgjidh produktin që po pranohet" />
+          <PageHeader title="Hyrje e re" sub="Zgjidh kategorinë e produktit — ngarkesa regjistrohet nën të, me furnizuesin dhe specifikimet e veta" />
           {store.drafts.length > 0 && (
             <section className="mb-6" aria-label="Draft-e">
               <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground"><span>Draft-e të papërfunduara</span><span className="text-warn">{store.drafts.length}</span></div>
@@ -111,30 +134,30 @@ export default function HyrjePage() {
               </div>
             </section>
           )}
-          <div className="relative mb-3"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Kërko produktin…" value={q} onChange={e => setQ(e.target.value)} className="pl-9" /></div>
+          <div className="relative mb-3"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Kërko kategorinë…" value={q} onChange={e => setQ(e.target.value)} className="pl-9" /></div>
           <div className="space-y-2">
             {filtered.map(p => { const sh = stockOf(p); const kg = sh.reduce((a, s) => a + remainingKg(s), 0); return (
               <button key={p.id} onClick={() => pick(p)} className="flex w-full items-center justify-between rounded-lg border bg-card px-4 py-3.5 text-left transition-colors hover:border-entry/60">
-                <div><div className="text-sm font-medium">{p.name}</div><div className="text-xs text-muted-foreground">{sh.length} dërgesa aktive · {fmtKg(kg, 0)}</div></div>
-                <div className="flex items-center gap-2"><Badge variant={p.weightType === "PALLET" ? "warn" : p.weightType === "FIXED" ? "entry" : "exit"}>{p.weightType === "PALLET" ? "paleta" : p.weightType === "FIXED" ? `fikse ${p.fixedKg} kg` : "variabile"}</Badge><ChevronRight className="h-4 w-4 text-muted-foreground" /></div>
+                <div><div className="text-sm font-medium">{p.name}</div><div className="text-xs text-muted-foreground">{sh.length} ngarkesa në stok · {fmtKg(kg, 0)}{sh.length ? ` · ${[...new Set(sh.map(x => store.suppliers.find(y => y.id === x.supplierId)?.name).filter(Boolean))].join(", ")}` : ""}</div></div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </button>); })}
-            {filtered.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">Asnjë produkt me këtë emër. Krijo një të ri më poshtë.</p>}
+            {filtered.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">Asnjë kategori me këtë emër. Krijo një të re më poshtë.</p>}
           </div>
-          <Button variant="outline" className="mt-3 w-full" onClick={() => setNewProd(true)}><Plus /> Produkt i ri</Button>
-          <NewProductDialog open={newProd} onClose={() => setNewProd(false)} onCreate={p => { setNewProd(false); pick(p); }} />
+          <Button variant="outline" className="mt-3 w-full" onClick={() => setNewProd(true)}><Plus /> Kategori e re</Button>
+          <ProductDialog open={newProd} onClose={() => setNewProd(false)} onSaved={p => pick(p)} />
         </motion.div>
       )}
 
       {step === "form" && product && (
         <motion.div key="form" {...fade}>
-          <PageHeader title={`Dërgesë e re — ${product.name}`} sub={draftId ? "Draft i rikthyer" : "Hapi 2 nga 3"} right={<Button variant="ghost" onClick={() => setStep("product")}><ArrowLeft /> Produktet</Button>} />
+          <PageHeader title={`Ngarkesë e re — ${product.name}`} sub={draftId ? "Draft i rikthyer" : "Hapi 2 nga 3"} right={<Button variant="ghost" onClick={() => setStep("product")}><ArrowLeft /> Kategoritë</Button>} />
           <Banner className="mb-6"><ClipboardList className="mr-1 inline h-3.5 w-3.5" />Plotëso sipas fletë-ngarkesës dhe shkarkimit faktik. Fushat &quot;faktike&quot; plotësohen vetë — ndryshoji vetëm nëse ka mospërputhje.</Banner>
 
           <Section n={1} title="Të dhënat e porosisë">
             <div className="grid gap-4 sm:grid-cols-2">
               <div><Label>Nr. i porosisë <Req /></Label><Input value={form.orderNr} onChange={e => set({ orderNr: e.target.value })} placeholder="p.sh. 4471" /><Hint>Disa produkte mund të ndajnë të njëjtin nr. porosie</Hint></div>
               <div><Label>Furnizuesi <Req /></Label>
-                <Select value={form.supplierId} onValueChange={v => v === "__new" ? setNewSup(true) : set({ supplierId: v })}>
+                <Select value={form.supplierId} onValueChange={v => v === "__new" ? setNewSup(true) : chooseSupplier(v)}>
                   <SelectTrigger><SelectValue placeholder="Zgjidh furnizuesin" /></SelectTrigger>
                   <SelectContent>{store.suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name} ({s.country})</SelectItem>)}<SelectItem value="__new">+ Furnizues i ri…</SelectItem></SelectContent>
                 </Select>
@@ -149,11 +172,23 @@ export default function HyrjePage() {
 
           <Section n={2} title="Forma e ngarkesës">
             <div className="max-w-sm"><Label>Si vjen ngarkesa?</Label><Segmented value={form.loadType} onChange={v => set({ loadType: v })} options={[{ value: "CARTON", label: "Kartona" }, { value: "PALLET", label: "Paleta" }]} /><Hint>{form.loadType === "CARTON" ? "Produkt i ndarë në kartona individuale" : "Produkt i pandashëm — vjen mbi paleta me peshë totale"}</Hint></div>
+            {form.loadType === "CARTON" && <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div><Label>Pesha e kartonave</Label><Segmented value={form.weighMode} onChange={v => set({ weighMode: v })} options={[{ value: "VARIABLE", label: "E ndryshme" }, { value: "FIXED", label: "Fikse" }]} /><Hint>{form.weighMode === "FIXED" ? "Çdo karton ka të njëjtën peshë — shitja bëhet me numër kartonash." : "Çdo karton ka peshë tjetër — shitja bëhet me peshat e kartonave ose me totalin nga fatura."}</Hint></div>
+              {form.weighMode === "FIXED" && <div><Label>Kg për karton <Req /></Label><Input type="number" step="0.001" value={form.fixedKg} onChange={e => set({ fixedKg: e.target.value })} placeholder="p.sh. 10" />{fixedKg > 0 && cntAct > 0 && Math.abs(fixedKg * cntAct - wAct) > 0.01 && <Hint className="text-warn">{cntAct} × {fixedKg} kg = {fmtNum(fixedKg * cntAct, 2)} kg, ndërsa pesha neto është {fmtNum(wAct, 2)} kg.</Hint>}</div>}
+            </div>}
             <DualField label={`Numri i ${unit}`} doc={form.countDoc} act={form.countActual} onDoc={v => set({ countDoc: v, countActual: v })} onAct={v => set({ countActual: v })} diff={cntAct - cntDoc} fmt={d => `${d > 0 ? "+" : ""}${d}`} />
             <DualField label="Pesha neto totale (kg)" doc={form.netKgDoc} act={form.netKgActual} onDoc={v => set({ netKgDoc: v, netKgActual: v })} onAct={v => set({ netKgActual: v })} diff={+(wAct - wDoc).toFixed(2)} fmt={d => `${d > 0 ? "+" : ""}${d.toFixed(2)} kg`} step="0.01" hint={avg > 0 ? `Mesatarisht ${avg.toFixed(2)} kg / ${form.loadType === "CARTON" ? "karton" : "paletë"}` : undefined} />
           </Section>
 
-          <Section n={3} title="Lotet">
+          <Section n={3} title="Specifikimet e ngarkesës">
+            {prefilled && <Banner className="mb-3">U plotësuan nga ngarkesa e fundit e këtij furnizuesi ({prefilled}) — kontrolloji dhe ndrysho nëse kjo ngarkesë është ndryshe.</Banner>}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div><Label>Origjina</Label><Input value={form.origin} onChange={e => set({ origin: e.target.value })} placeholder="p.sh. Brazil" /></div>
+              <div><Label>Specifikime</Label><Input value={form.specs} onChange={e => set({ specs: e.target.value })} placeholder="p.sh. Seara, IQF, 200–250 g copa" /><Hint>Marka, prerja, kalibri, paketimi — çdo gjë që e dallon këtë ngarkesë.</Hint></div>
+            </div>
+          </Section>
+
+          <Section n={4} title="Lotet">
             <Hint className="mb-3">Nëse ngarkesa vjen nga disa lote, shto secilin me sasinë përkatëse të {unit}.</Hint>
             <div className="space-y-2">
               {form.lots.map((l, i) => (
@@ -168,7 +203,7 @@ export default function HyrjePage() {
             {cntAct > 0 && <div className={cn("mt-3 flex items-center justify-between rounded-md px-3 py-2 text-xs", lotSum === cntAct ? "bg-entry/10 text-entry" : "bg-warn/10 text-warn")}><span>Shuma e loteve</span><span className="tabular">{lotSum} / {cntAct} {unit}</span></div>}
           </Section>
 
-          <Section n={4} title="Kosto">
+          <Section n={5} title="Kosto">
             <div className="grid gap-4 sm:grid-cols-2">
               <div><Label>Njësia e kostos</Label><Segmented value={form.costUnit} onChange={v => set({ costUnit: v })} options={[{ value: "kg", label: "për kg" }, { value: "ton", label: "për ton" }]} /></div>
               <div><Label>Kosto totale {form.costUnit === "kg" ? "për kg" : "për ton"} (Lek) <Req /></Label><Input type="number" value={form.costVal} onChange={e => set({ costVal: e.target.value })} placeholder={form.costUnit === "kg" ? "p.sh. 340" : "p.sh. 340000"} /><Hint>Përfshin transportin, doganën etj. — dhënë nga financa</Hint></div>
@@ -179,7 +214,7 @@ export default function HyrjePage() {
             </div>
           </Section>
 
-          <Section n={5} title="Datat">
+          <Section n={6} title="Datat">
             <div className="max-w-sm"><Label>Lloji i datave</Label><Segmented value={form.dateMode} onChange={v => set({ dateMode: v })} options={[{ value: "FIXED", label: "Data fikse" }, { value: "RANGE", label: "Interval datash" }]} /></div>
             {form.dateMode === "FIXED" ? (
               <div className="mt-3 grid gap-4 sm:grid-cols-2"><div><Label>Data e prodhimit</Label><Input type="date" value={form.prodFrom} onChange={e => set({ prodFrom: e.target.value })} /></div><div><Label>Data e skadimit <Req /></Label><Input type="date" value={form.expFrom} onChange={e => set({ expFrom: e.target.value })} /></div></div>
@@ -196,8 +231,8 @@ export default function HyrjePage() {
             <Button variant="warn" size="lg" onClick={saveDraft}><Save /> Ruaj si draft</Button>
             <Button variant="entry" size="lg" disabled={!canReview} onClick={() => setStep("review")}>Verifiko <ArrowRight /></Button>
           </div>
-          {!canReview && <p className="mt-2 text-xs text-muted-foreground">Për të verifikuar duhen: nr. porosie, furnizuesi, data e hyrjes, sasia dhe pesha faktike, kostoja dhe data e skadimit.</p>}
-          <SupplierDialog open={newSup} onClose={() => setNewSup(false)} onSaved={s => set({ supplierId: s.id })} />
+          {!canReview && <p className="mt-2 text-xs text-muted-foreground">Për të verifikuar duhen: nr. porosie, furnizuesi, data e hyrjes, sasia dhe pesha faktike, kostoja, data e skadimit{isFixed ? " dhe kg për karton" : ""}.</p>}
+          <SupplierDialog open={newSup} onClose={() => setNewSup(false)} onSaved={s => chooseSupplier(s.id)} />
         </motion.div>
       )}
 
@@ -214,7 +249,7 @@ export default function HyrjePage() {
             <Row k="Data e hyrjes" v={<span className={form.entryDate !== todayInTirane() ? "text-warn" : undefined}>{form.entryDate ? fmtDate(form.entryDate) : "—"}</span>} /><Row k="Lotet" v={form.lots.filter(l => l.lotNumber).map(l => `${l.lotNumber} (${l.qty || 0})`).join(", ") || "—"} />
             <Row k="Nr. porosie" v={form.orderNr} /><Row k="Kosto / kg" v={fmtNum(perKg, 2) + " Lek"} />
             <Row k="Furnizuesi" v={supplier?.name ?? "—"} /><Row k="Vlera totale" v={<span className="text-entry">{fmtLek(total)}</span>} />
-            <Row k="Forma" v={form.loadType === "CARTON" ? "Kartona" : "Paleta"} /><Row k="Prodhimi" v={form.prodFrom ? fmtDate(form.prodFrom) + (form.dateMode === "RANGE" && form.prodTo ? ` – ${fmtDate(form.prodTo)}` : "") : "—"} />
+            <Row k="Specifikimet" v={loadSpecLabel(specOf)} /><Row k="Prodhimi" v={form.prodFrom ? fmtDate(form.prodFrom) + (form.dateMode === "RANGE" && form.prodTo ? ` – ${fmtDate(form.prodTo)}` : "") : "—"} />
             <Row k="Sasia" v={`${cntAct} ${unit}`} /><Row k="Skadimi" v={form.expFrom ? fmtDate(form.expFrom) + (form.dateMode === "RANGE" ? " (më e hershmja)" : "") : "—"} />
           </div>
           <div className="mt-4 grid max-w-md grid-cols-2 gap-3"><Button variant="outline" size="lg" onClick={() => setStep("form")}>Kthehu & ndrysho</Button><Button variant="entry" size="lg" disabled={!canReview} onClick={finalize}><Check /> Ruaj dërgesën</Button></div>
@@ -251,23 +286,5 @@ function DualField({ label, doc, act, onDoc, onAct, diff, fmt, step, hint }: { l
       </div>
       {hint && <Hint>{hint}</Hint>}
     </div>
-  );
-}
-
-function NewProductDialog({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (p: Product) => void }) {
-  const add = useStore(s => s.addProduct);
-  const [name, setName] = useState(""); const [origin, setOrigin] = useState(""); const [wt, setWt] = useState<WeightType>("VARIABLE"); const [fixed, setFixed] = useState("");
-  return (
-    <Dialog open={open} onOpenChange={o => !o && onClose()}>
-      <DialogContent><DialogTitle>Produkt i ri</DialogTitle><DialogDescription>Krijo një kategori të re produkti për magazinën.</DialogDescription>
-        <div className="mt-4 space-y-3">
-          <div><Label>Emri i produktit</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="p.sh. Krahë pule të ngrirë" /></div>
-          <div><Label>Origjina (opsionale)</Label><Input value={origin} onChange={e => setOrigin(e.target.value)} placeholder="p.sh. Brazil" /></div>
-          <div><Label>Lloji i peshës</Label><Segmented value={wt} onChange={setWt} options={[{ value: "VARIABLE", label: "Variabile" }, { value: "FIXED", label: "Fikse" }, { value: "PALLET", label: "Paleta" }]} /></div>
-          {wt === "FIXED" && <div><Label>Pesha fikse për karton (kg)</Label><Input type="number" value={fixed} onChange={e => setFixed(e.target.value)} placeholder="p.sh. 10" /></div>}
-          <Button variant="entry" className="w-full" disabled={!name.trim() || (wt === "FIXED" && !(+fixed > 0))} onClick={async () => { try { onCreate(await add({ name: name.trim(), origin: origin || undefined, weightType: wt, fixedKg: wt === "FIXED" ? +fixed || undefined : undefined })); } catch (e) { toast.error(e instanceof Error ? e.message : "Produkti nuk u krijua"); } }}>Krijo & vazhdo</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
