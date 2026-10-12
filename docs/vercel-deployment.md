@@ -49,3 +49,15 @@ For Preview, use `-e preview` with its own database and initial account. Keep lo
 3. Deploy or promote the Vercel build, sign in, and test a read and a write. Inspect function logs if a route fails. Changes to Vercel environment variables require a new deployment to reach running functions.
 
 Prisma Migrate is the sole schema migration system for this repository. Keep its migration directories in Git. Do not use `prisma db push` or `prisma migrate dev` against Production. Set up managed database backups and confirm restore works before storing real operations data.
+
+## Server logs
+
+Each supported application API handler emits one JSON `api.request` entry through Vercel Runtime Logs. This covers the GET/POST handlers and HEAD requests delegated to GET. Framework-generated OPTIONS and unsupported-method 405 responses use Vercel's platform request logs and do not receive an application correlation ID. Open the project's **Logs** page, select **Production**, and use **Live** while reproducing an issue. Search by route (for example `/api/commands`), action (`finalizeSale`), reason (`stock_conflict`) or the correlation ID.
+
+Entries contain UTC timestamp, level, route, HTTP method/status, duration in milliseconds, and a server-generated `requestId`. Authenticated requests include the internal user UUID; validated commands include their action, optional idempotency `operationId`, result UUID, and write outcome. `completed` means a durable result was returned by the command (including normal idempotent retries); `replayed` identifies recovery of a concurrent duplicate. A completed result remains in the log if loading response data subsequently fails.
+
+The `x-request-id` response header matches the log entry. Unexpected 500 responses also return this ID in their JSON body with a generic error. Find it in the browser's Network panel to correlate a failure with its server entry. It is distinct from Vercel's platform request ID and the receiving/sales idempotency key.
+
+Successful requests use `info`; handled 400/401/409/429 responses use `warn` with a reason code; server failures use `error`. Vercel may classify stderr output as an error even when the embedded JSON level is `warn`, so inspect the recorded HTTP status and reason. Unexpected failures report an approved error class and database/network code; Next.js redirects and dynamic-rendering exceptions continue through the framework.
+
+Request/response bodies, query strings, incoming headers, usernames, passwords, cookies, session tokens, connection strings, raw exception messages/stacks and Prisma metadata are never included by the application logger. Log retention follows the Vercel plan; these diagnostic logs do not replace the persistent stock ledger.

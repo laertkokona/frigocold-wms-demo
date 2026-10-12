@@ -1,3 +1,4 @@
+import { withRequestLog } from "@/lib/server/request-log";
 import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/server/session";
 import { getDb } from "@/lib/server/db";
@@ -5,8 +6,10 @@ import { daysUntil } from "@/lib/utils";
 
 type Balance = { product_id: string; load_type: string; exp_from: string; kg: unknown; qty: unknown };
 
-export async function GET() {
-  if (!(await currentUser())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const GET = withRequestLog({ route: "/api/nav", action: "nav" }, async (_request, log) => {
+  const user = await currentUser();
+  if (!user) { log.reason("authentication_required"); return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+  log.actor(user.id);
   const db = getDb();
   const [drafts, settings, balances] = await Promise.all([
     db.draft.count(),
@@ -29,4 +32,4 @@ export async function GET() {
   }
   for (const [id, minimum] of Object.entries(lowProductKg)) if (minimum > 0 && (byProduct.get(id) ?? 0) < minimum) alerts++;
   return NextResponse.json({ alerts, drafts }, { headers: { "Cache-Control": "no-store" } });
-}
+});

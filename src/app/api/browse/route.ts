@@ -1,3 +1,4 @@
+import { withRequestLog } from "@/lib/server/request-log";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { currentUser } from "@/lib/server/session";
@@ -13,9 +14,11 @@ const params = z.object({
   filter: z.string().max(20).default(""),
 });
 
-export async function GET(request: Request) {
-  if (!(await currentUser())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const GET = withRequestLog({ route: "/api/browse", action: "browse" }, async (request, log) => {
+  const user = await currentUser();
+  if (!user) { log.reason("authentication_required"); return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+  log.actor(user.id);
   const parsed = params.safeParse(Object.fromEntries(new URL(request.url).searchParams));
-  if (!parsed.success) return NextResponse.json({ error: "Invalid query" }, { status: 400 });
+  if (!parsed.success) { log.reason("validation_failed"); return NextResponse.json({ error: "Invalid query" }, { status: 400 }); }
   return NextResponse.json(await browse(parsed.data), { headers: { "Cache-Control": "no-store" } });
-}
+});

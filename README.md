@@ -24,6 +24,7 @@ For Vercel and hosted PostgreSQL, follow [the deployment runbook](docs/vercel-de
 ## What the backend does
 
 - `/api/auth/login` and `/api/auth/logout` use hashed passwords and an HTTP-only, signed, 12-hour session cookie. Failed logins are throttled per IP/username.
+- Supported API handlers emit structured server logs with correlation IDs, action, status, duration and safe error codes. View them in Vercel's Logs page; see [server logging guidance](docs/vercel-deployment.md#server-logs).
 - `/api/browse` provides authenticated, filtered, sorted, paginated clients, suppliers, active inventory, movement history, and cross-entity search. Page size is capped at 100.
 - `/api/dashboard` and `/api/accounting` calculate dashboard and finance views on the server. Dashboard detail sections are bounded to their leading rows; the finance lot table returns 25 rows per page.
 - `/api/nav` returns alert and draft counts without loading all records into the browser.
