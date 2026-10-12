@@ -1,6 +1,8 @@
 import type { Client, Product, Sale, Shipment, Thresholds } from "./types";
 import { daysUntil, todayInTirane } from "./utils";
 import { remainingCount, remainingKg } from "./stock";
+import { econOf } from "./accounting";
+import { inventoryCosts, sumCosts } from "./costs";
 
 export interface Alert { level: "danger" | "warn"; title: string; detail: string; href: string; }
 
@@ -11,7 +13,8 @@ export function computeAlerts(shipments: Shipment[], products: Product[], t: Thr
     const rem = remainingKg(s); if (rem <= 0) continue;
     const d = daysUntil(s.expFrom);
     if (d <= t.expiryDays) out.push({ level: d <= 30 ? "danger" : "warn", title: `Lot ${s.lots[0]?.lotNumber} · ${pname(s.productId)} — ${d <= 0 ? "ka skaduar" : `skadon për ${d} ditë`}`, detail: `${rem.toFixed(1)} kg mbeten — shit i pari`, href: `/inventari/${s.id}` });
-    if (s.loadType === "CARTON" && remainingCount(s) > 0 && remainingCount(s) <= t.lowShipmentCount)
+    const count = remainingCount(s);
+    if (s.loadType === "CARTON" && count != null && count > 0 && count <= t.lowShipmentCount)
       out.push({ level: "warn", title: `Lot ${s.lots[0]?.lotNumber} · ${pname(s.productId)} — sasi e ulët e lotit`, detail: `Vetëm ${remainingCount(s)} kartona mbeten nga ky lot`, href: `/inventari/${s.id}` });
   }
   for (const p of products) {
@@ -26,10 +29,10 @@ export function stockByProduct(shipments: Shipment[], products: Product[]) {
   return products.map(p => {
     const sh = shipments.filter(s => s.productId === p.id && remainingKg(s) > 0);
     const kg = sh.reduce((a, s) => a + remainingKg(s), 0);
-    const value = sh.reduce((a, s) => a + remainingKg(s) * s.costPerKg, 0);
-    const count = sh.reduce((a, s) => a + remainingCount(s), 0);
+    const valuation = inventoryCosts(sh);
+    const count = sumCosts(sh.map(s => remainingCount(s)));
     const earliest = sh.length ? Math.min(...sh.map(s => daysUntil(s.expFrom))) : Infinity;
-    return { product: p, kg, value, count, shipments: sh.length, earliestDays: earliest };
+    return { product: p, kg, ...valuation, count, shipments: sh.length, earliestDays: earliest };
   }).sort((a, b) => b.kg - a.kg);
 }
 
@@ -47,7 +50,7 @@ export function flows(shipments: Shipment[], sales: Sale[], months: string[]) {
     inKg: shipments.filter(s => monthKey(s.entryDate) === m).reduce((a, s) => a + s.netKgActual, 0),
     outKg: sales.filter(s => monthKey(s.date) === m).reduce((a, s) => a + s.totalKg, 0),
     revenue: sales.filter(s => monthKey(s.date) === m).reduce((a, s) => a + s.totalValue, 0),
-    cost: shipments.filter(s => monthKey(s.entryDate) === m).reduce((a, s) => a + s.totalCost, 0),
+    cost: sumCosts(shipments.filter(s => monthKey(s.entryDate) === m).map(s => s.totalCost)),
   }));
 }
 
@@ -69,11 +72,11 @@ export function productProfit(products: Product[], shipments: Shipment[], sales:
     const lines = sales.flatMap(s => s.lines.filter(l => l.productId === p.id).map(l => ({ ...l, date: s.date })));
     const kg = lines.reduce((a, l) => a + l.kg, 0);
     const revenue = lines.reduce((a, l) => a + l.total, 0);
-    const cost = lines.reduce((a, l) => a + l.kg * (shipments.find(s => s.id === l.shipmentId)?.costPerKg ?? 0), 0);
+    const economics = econOf(lines, shipments);
     const cur = monthKey(todayInTirane()), prev = lastMonths(2)[0];
     const kgCur = lines.filter(l => monthKey(l.date) === cur).reduce((a, l) => a + l.kg, 0);
     const kgPrev = lines.filter(l => monthKey(l.date) === prev).reduce((a, l) => a + l.kg, 0);
-    return { product: p, kg, revenue, cost, profit: revenue - cost, margin: revenue ? (revenue - cost) / revenue : 0, kgCur, kgPrev, delta: kgPrev ? (kgCur - kgPrev) / kgPrev : (kgCur ? 1 : 0) };
+    return { product: p, kg, revenue, cost: economics.cogs, profit: economics.profit, margin: economics.margin, missingCostKg: economics.missingCostKg, kgCur, kgPrev, delta: kgPrev ? (kgCur - kgPrev) / kgPrev : (kgCur ? 1 : 0) };
   }).sort((a, b) => b.revenue - a.revenue);
 }
 

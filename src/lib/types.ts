@@ -12,16 +12,16 @@ export interface LotAlloc { lotNumber: string; qty: number; }
 export interface Shipment {
   id: string;
   productId: string;
-  supplierId: string;
-  orderNr: string;
+  supplierId: string | null;
+  orderNr: string | null;
   loadType: LoadType;
-  countDoc: number;
-  countActual: number;
-  netKgDoc: number;
+  countDoc: number | null;
+  countActual: number | null;
+  netKgDoc: number | null;
   netKgActual: number;
   lots: LotAlloc[];
-  costPerKg: number;      // Lek, canonical
-  totalCost: number;      // Lek
+  costPerKg: number | null; // Unknown purchase cost is never treated as zero.
+  totalCost: number | null;
   dateMode: DateMode;
   prodFrom: string;       // ISO
   prodTo?: string;
@@ -46,7 +46,7 @@ export interface SaleLine {
   productId: string;
   shipmentId: string;
   method: SaleMethod;
-  qty: number;
+  qty: number | null;
   kg: number;
   pricePerKg: number;
   total: number;

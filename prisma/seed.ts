@@ -29,7 +29,7 @@ async function main() {
   for (const c of demo.clients) clients.set(c.id, (await db.client.create({ data: { name: c.name, city: c.city, contact: c.contact, phone: c.phone } })).id);
   for (const s of demo.shipments) {
     const row = await db.shipment.create({ data: {
-      productId: products.get(s.productId)!, supplierId: suppliers.get(s.supplierId)!, orderNr: s.orderNr,
+      productId: products.get(s.productId)!, supplierId: s.supplierId ? suppliers.get(s.supplierId)! : null, orderNr: s.orderNr,
       loadType: s.loadType, countDoc: s.countDoc, countActual: s.countActual, netKgDoc: s.netKgDoc,
       netKgActual: s.netKgActual, costPerKg: s.costPerKg, dateMode: s.dateMode, prodFrom: s.prodFrom,
       prodTo: s.prodTo, expFrom: s.expFrom, expTo: s.expTo, entryDate: s.entryDate,
@@ -44,7 +44,7 @@ async function main() {
     for (const l of sale.lines) {
       const shipmentId = shipments.get(l.shipmentId)!;
       await db.saleLine.create({ data: { saleId: row.id, shipmentId, method: l.method, qty: l.qty, kg: l.kg, pricePerKg: l.pricePerKg, weights: l.weights, fixedKg: l.fixedKg } });
-      await db.movement.create({ data: { shipmentId, saleId: row.id, userId: user.id, type: "OUT", kg: -l.kg, qty: -l.qty } });
+      await db.movement.create({ data: { shipmentId, saleId: row.id, userId: user.id, type: "OUT", kg: -l.kg, qty: l.qty == null ? null : -l.qty } });
     }
   }
   const lowProductKg = Object.fromEntries(Object.entries(demo.thresholds.lowProductKg).map(([oldId, kg]) => [products.get(oldId)!, kg]));

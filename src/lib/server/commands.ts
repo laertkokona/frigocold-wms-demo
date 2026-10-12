@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { getDb } from "./db";
-import { assertAvailable, assertSaleDate, requiredStock } from "./sale-rules";
+import { assertAvailable, assertSaleDate, requiredStock, StockError } from "./sale-rules";
 
 export class DomainError extends Error {}
 const id = z.string().uuid();
@@ -14,18 +14,18 @@ const count = z.number().int().nonnegative();
 const lot = z.object({ lotNumber: z.string().trim().min(1).max(100), qty: z.number().int().positive() });
 
 const shipment = z.object({
-  productId: id, supplierId: id, orderNr: z.string().trim().min(1).max(100),
+  productId: id, supplierId: id.nullable().default(null), orderNr: z.string().trim().min(1).max(100).nullable().default(null),
   draftId: id.optional(),
-  loadType: z.enum(["CARTON", "PALLET"]), countDoc: count, countActual: z.number().int().positive(),
-  netKgDoc: nonnegative, netKgActual: positive, lots: z.array(lot).min(1), costPerKg: positive,
-  dateMode: z.enum(["FIXED", "RANGE"]), prodFrom: date.or(z.literal("")), prodTo: date.optional(),
-  expFrom: date, expTo: date.optional(), entryDate: date,
+  loadType: z.enum(["CARTON", "PALLET"]).default("CARTON"), countDoc: count.nullable().default(null), countActual: z.number().int().positive().nullable().default(null),
+  netKgDoc: nonnegative.nullable().default(null), netKgActual: positive, lots: z.array(lot).default([]), costPerKg: positive.nullable().default(null),
+  dateMode: z.enum(["FIXED", "RANGE"]).default("FIXED"), prodFrom: date.or(z.literal("")).default(""), prodTo: date.optional(),
+  expFrom: date, expTo: date.optional(), entryDate: date.default(() => new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Tirane" })),
   fixedKg: positive.optional(), origin: z.string().trim().max(100).optional(), specs: z.string().trim().max(200).optional(),
 });
 
 const line = z.object({
   productId: id, shipmentId: id, method: z.enum(["FIXED", "VARIABLE", "PALLET", "TOTAL"]),
-  qty: z.number().int().positive(), kg: positive, pricePerKg: nonnegative,
+  qty: z.number().int().positive().nullable().default(null), kg: positive, pricePerKg: nonnegative,
   weights: z.array(positive).optional(), fixedKg: positive.optional(),
 });
 
@@ -37,6 +37,9 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("updateSupplier"), id, data: z.object({ name: name.optional(), country: z.string().trim().max(100).optional(), contact: z.string().max(150).optional(), phone: z.string().max(50).optional() }) }),
   z.object({ type: z.literal("updateClient"), id, data: z.object({ name: name.optional(), city: z.string().trim().max(100).optional(), contact: z.string().max(150).optional(), phone: z.string().max(50).optional() }) }),
   z.object({ type: z.literal("addShipment"), data: shipment }),
+  z.object({ type: z.literal("updateShipmentDetails"), id, data: z.object({
+    supplierId: id.nullable().optional(), orderNr: z.string().trim().min(1).max(100).nullable().optional(), costPerKg: positive.nullable().optional(),
+  }).strict().refine(data => Object.keys(data).length > 0, "No editable details supplied") }),
   z.object({ type: z.literal("saveDraft"), data: z.object({ id: id.optional(), productId: id, data: z.record(z.string(), z.unknown()) }) }),
   z.object({ type: z.literal("deleteDraft"), id }),
   z.object({ type: z.literal("finalizeSale"), data: z.object({ clientId: id, lines: z.array(line).min(1), date: date.optional() }) }),
@@ -46,9 +49,10 @@ export const commandSchema = z.discriminatedUnion("type", [
 export type Command = z.infer<typeof commandSchema>;
 export function commandHash(command: Command) { return createHash("sha256").update(JSON.stringify(command)).digest("hex"); }
 
-function validateShipment(s: z.infer<typeof shipment>) {
+export function validateShipment(s: z.infer<typeof shipment>) {
   if (new Set(s.lots.map(l => l.lotNumber.toLowerCase())).size !== s.lots.length) throw new DomainError("Duplicate lot number");
-  if (s.lots.reduce((n, l) => n + l.qty, 0) !== s.countActual) throw new DomainError("Lot quantities must equal received units");
+  if (s.lots.length && s.countActual == null) throw new DomainError("Lot quantities require a known unit count");
+  if (s.lots.length && s.lots.reduce((n, l) => n + l.qty, 0) !== s.countActual) throw new DomainError("Lot quantities must equal received units");
   if (s.dateMode === "RANGE" && (!s.expTo || s.expTo < s.expFrom || (s.prodTo && s.prodTo < s.prodFrom))) throw new DomainError("Invalid date range");
   if (s.expFrom < s.prodFrom) throw new DomainError("Expiry date precedes production date");
   if (s.fixedKg && s.loadType !== "CARTON") throw new DomainError("Fixed carton weight applies only to carton loads");
@@ -104,6 +108,10 @@ export async function executeCommand(command: Command, userId: string, requestId
       });
       return { id: row.id };
     }
+    case "updateShipmentDetails": {
+      const row = await db.shipment.update({ where: { id: command.id }, data: command.data });
+      return { id: row.id };
+    }
     case "saveDraft": {
       const d = command.data;
       const row = d.id ? await db.draft.upsert({ where: { id: d.id }, create: { id: d.id, productId: d.productId, data: d.data as Prisma.InputJsonValue }, update: { productId: d.productId, data: d.data as Prisma.InputJsonValue } }) : await db.draft.create({ data: { productId: d.productId, data: d.data as Prisma.InputJsonValue } });
@@ -129,14 +137,15 @@ export async function executeCommand(command: Command, userId: string, requestId
         if (shipments.length !== ids.length) throw new DomainError("Shipment not found");
         const byId = new Map(shipments.map(s => [s.id, s]));
         for (const l of lines) if (byId.get(l.shipmentId)?.productId !== l.productId) throw new DomainError("Product does not match shipment");
+        for (const l of lines) if (byId.get(l.shipmentId)?.countActual == null && l.method !== "TOTAL") throw new StockError("Stock without a unit count must be sold by total kilograms");
         assertSaleDate(saleDate, today, shipments.map(s => s.entryDate));
         const moved = await tx.movement.groupBy({ by: ["shipmentId"], where: { shipmentId: { in: ids } }, _sum: { kg: true, qty: true } });
-        const balance = new Map(moved.map(m => [m.shipmentId, { kg: m._sum.kg?.toNumber() ?? 0, qty: m._sum.qty ?? 0 }]));
+        const balance = new Map(moved.map(m => [m.shipmentId, { kg: m._sum.kg?.toNumber() ?? 0, qty: byId.get(m.shipmentId)?.countActual == null ? null : m._sum.qty ?? 0 }]));
         assertAvailable(required, balance);
         const created = await tx.sale.create({ data: { clientId, date: saleDate } });
         for (const l of lines) {
           await tx.saleLine.create({ data: { saleId: created.id, shipmentId: l.shipmentId, method: l.method, qty: l.qty, kg: l.kg, pricePerKg: l.pricePerKg, weights: l.weights ?? Prisma.JsonNull, fixedKg: l.fixedKg } });
-          await tx.movement.create({ data: { shipmentId: l.shipmentId, saleId: created.id, userId, type: "OUT", kg: -l.kg, qty: -l.qty } });
+          await tx.movement.create({ data: { shipmentId: l.shipmentId, saleId: created.id, userId, type: "OUT", kg: -l.kg, qty: l.qty == null ? null : -l.qty } });
         }
         await tx.operation.update({ where: { key: requestId! }, data: { resultId: created.id } });
         return created;

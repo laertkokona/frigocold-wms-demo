@@ -9,7 +9,7 @@ import { Banner } from "@/components/ui/banner";
 import { PageHeader } from "@/components/shell";
 import { useServerReport } from "@/lib/use-server-report";
 import type { DashboardData } from "@/lib/server/dashboard";
-import { cn, daysUntil, fmtDate, fmtKg, fmtLek, fmtNum, todayInTirane } from "@/lib/utils";
+import { cn, daysUntil, fmtDate, fmtKg, fmtLek, fmtNum, fmtPercent, todayInTirane } from "@/lib/utils";
 
 export default function Dashboard() {
   const report = useServerReport<DashboardData>("/api/dashboard");
@@ -23,12 +23,13 @@ export default function Dashboard() {
     <>
       <PageHeader title="Paneli kryesor" sub={`${fmtDate(todayInTirane())} · Frigo ALBA, Kashar`} right={<div className="flex gap-2"><Button asChild variant="entry"><Link href="/hyrje"><PackagePlus /> Hyrje e re</Link></Button><Button asChild variant="exit"><Link href="/dalje"><PackageMinus /> Porosi shitjeje</Link></Button></div>} />
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Stoku total" value={fmtKg(totalKg, 0)} sub={`vlerë kostoje ${fmtLek(totalVal)}`} />
+        <Stat label="Stoku total" value={fmtKg(totalKg, 0)} sub={totalVal == null ? `${fmtLek(report.data.knownStockValue)} me kosto të njohur · ${fmtKg(report.data.missingStockCostKg, 0)} pa kosto` : `vlerë kostoje ${fmtLek(totalVal)}`} />
         <Stat label="Të ardhura këtë muaj" value={fmtLek(revenueMonth)} sub={<Delta a={cur.revenue} b={prev.revenue} />} />
-        <Stat label="Fitimi bruto këtë muaj" value={fmtLek(profitMonth)} sub={revenueMonth ? `marzh ${((profitMonth / revenueMonth) * 100).toFixed(1)}%` : "—"} tone="entry" />
-        <Stat label="Rrezik skadimi" value={fmtKg(riskKg, 0)} sub={`${fmtLek(riskVal)} kosto e ekspozuar`} tone={riskKg > 0 ? "danger" : undefined} />
+        <Stat label="Fitimi bruto këtë muaj" value={profitMonth == null ? "I paplotë" : fmtLek(profitMonth)} sub={profitMonth == null ? `${fmtKg(report.data.missingMonthCostKg, 0)} të shitura pa kosto` : revenueMonth ? `marzh ${((profitMonth / revenueMonth) * 100).toFixed(1)}%` : "—"} tone="entry" />
+        <Stat label="Rrezik skadimi" value={fmtKg(riskKg, 0)} sub={riskVal == null ? `${fmtLek(report.data.knownRiskValue)} kosto e njohur · ${fmtKg(report.data.missingRiskCostKg, 0)} pa kosto` : `${fmtLek(riskVal)} kosto e ekspozuar`} tone={riskKg > 0 ? "danger" : undefined} />
       </div>
 
+      {(report.data.missingStockCostKg > 0 || report.data.missingMonthCostKg > 0) && <Banner tone="warn" className="mb-4">Kosto të paplota: vlera totale dhe fitimi shfaqen vetëm kur të gjitha kostot përkatëse njihen. Plotëso koston te ngarkesat për të përditësuar raportin.</Banner>}
       <Tabs defaultValue="ov">
         <TabsList className="max-w-full overflow-x-auto"><TabsTrigger value="ov">Përmbledhje</TabsTrigger><TabsTrigger value="inv">Inventari</TabsTrigger><TabsTrigger value="cli">Klientët</TabsTrigger><TabsTrigger value="sup">Furnizuesit</TabsTrigger><TabsTrigger value="tr">Tendencat</TabsTrigger></TabsList>
 
@@ -40,7 +41,7 @@ export default function Dashboard() {
             </CardContent></Card>
             <Card><CardHeader><CardTitle>Lëvizësit kryesorë</CardTitle><CardDescription>Këtë muaj</CardDescription></CardHeader><CardContent className="text-sm">
               <Mover icon={Crown} label="Klienti kryesor" sub={cs[0]?.client.name ?? "—"} val={fmtLek(cs[0]?.valCur ?? 0)} />
-              <Mover icon={TrendingUp} label="Produkti më fitimprurës" sub={mostProfitable?.product.name ?? "—"} val={fmtLek(mostProfitable?.profit ?? 0)} />
+              <Mover icon={TrendingUp} label="Produkti më fitimprurës" sub={report.data.profitRankingIncomplete ? "Kosto të paplota" : mostProfitable?.product.name ?? "—"} val={report.data.profitRankingIncomplete ? "—" : fmtLek(mostProfitable?.profit ?? 0)} />
               <Mover icon={Zap} label="Lëvizja më e shpejtë" sub={`${fastest?.product.name ?? "—"} · ${fastest?.days ?? "—"} ditë në stok`} val="i shpejtë" /><Mover icon={Zap} label="Lëvizja më e ngadaltë" sub={`${slowest?.product.name ?? "—"} · ${slowest?.days ?? "—"} ditë në stok`} val={<span className="text-warn">i ngadaltë</span>} />
             </CardContent></Card>
           </div>
@@ -63,7 +64,7 @@ export default function Dashboard() {
               {turnover.map(({ product, days }) => { const d = days; const w = d === null ? 0 : Math.min(100, d / 2); return <div key={product.id} className="flex items-center gap-3 text-sm"><span className="w-40 truncate">{product.name}</span><div className="h-4 flex-1 overflow-hidden rounded bg-secondary"><div className={cn("flex h-full items-center pl-2 text-[10px] font-medium text-white", d === null ? "bg-border" : d < 30 ? "bg-entry" : d < 90 ? "bg-warn" : "bg-danger")} style={{ width: `${Math.max(w, 12)}%` }}>{d === null ? "pa shitje" : `${d}d`}</div></div></div>; })}
             </CardContent></Card>
             <Card><CardHeader><CardTitle>Rreziku i skadimit sipas lotit</CardTitle><CardDescription>Renditur nga më urgjenti</CardDescription></CardHeader><CardContent>
-              {expiring.map(s => { const d = daysUntil(s.expFrom); return <Link href={`/inventari/${s.id}`} key={s.id} className="flex items-center justify-between border-b py-2.5 text-sm last:border-0 hover:bg-accent/40"><div><div className="font-medium">Lot {s.lot} · {s.product} <Badge variant={d < 60 ? "danger" : d < 180 ? "warn" : "entry"} className="ml-1">{d < 0 ? "skaduar" : `${d} ditë`}</Badge></div><div className="text-xs text-muted-foreground">{s.supplier} · {s.remainingCount} {s.loadType === "PALLET" ? "paleta" : "kartona"}</div></div><span className="tabular">{fmtKg(s.remainingKg, 0)}</span></Link>; })}
+              {expiring.map(s => { const d = daysUntil(s.expFrom); return <Link href={`/inventari/${s.id}`} key={s.id} className="flex items-center justify-between border-b py-2.5 text-sm last:border-0 hover:bg-accent/40"><div><div className="font-medium">Lot {s.lot} · {s.product} <Badge variant={d < 60 ? "danger" : d < 180 ? "warn" : "entry"} className="ml-1">{d < 0 ? "skaduar" : `${d} ditë`}</Badge></div><div className="text-xs text-muted-foreground">{s.supplier} · {s.remainingCount == null ? "sasi e panjohur" : `${s.remainingCount} ${s.loadType === "PALLET" ? "paleta" : "kartona"}`}</div></div><span className="tabular">{fmtKg(s.remainingKg, 0)}</span></Link>; })}
             </CardContent></Card>
           </div>
           <Card className="mt-4"><CardHeader><CardTitle>Stoku sipas produktit</CardTitle><CardDescription>Kg dhe vlera me kosto</CardDescription></CardHeader><CardContent className="space-y-2">
@@ -88,13 +89,13 @@ export default function Dashboard() {
         <TabsContent value="sup">
           <Card><CardHeader><CardTitle>Performanca e furnizuesve</CardTitle><CardDescription>Kosto mesatare, jetëgjatësi në mbërritje, mospërputhje dokument–faktik</CardDescription></CardHeader><CardContent>
               {supplierPerformance.map(sp => (
-              <div key={sp.id} className="flex flex-wrap items-center gap-3 border-b py-3 text-sm last:border-0"><div className="min-w-48 flex-1"><div className="font-medium">{sp.name} <span className="text-xs text-muted-foreground">({sp.country})</span></div><div className="text-xs text-muted-foreground">{sp.count} dërgesa · {fmtKg(sp.kg, 0)} importuar</div></div><KV k="Kosto mes. / kg" v={fmtNum(sp.cost, 0) + " Lek"} /><KV k="Jetëgjatësi në mbërritje" v={<span className={cn(sp.life < 6 && "text-warn")}>{sp.life} muaj</span>} /><KV k="Mospërputhje" v={<span className={cn(sp.discPct > 0.5 && "text-warn")}>{sp.discPct.toFixed(2)}%</span>} /></div>))}
+              <div key={sp.id} className="flex flex-wrap items-center gap-3 border-b py-3 text-sm last:border-0"><div className="min-w-48 flex-1"><div className="font-medium">{sp.name} <span className="text-xs text-muted-foreground">({sp.country})</span></div><div className="text-xs text-muted-foreground">{sp.count} dërgesa · {fmtKg(sp.kg, 0)} importuar</div></div><KV k="Kosto mes. / kg" v={fmtNum(sp.cost, 0) + " Lek"} /><KV k="Jetëgjatësi në mbërritje" v={<span className={cn(sp.life < 6 && "text-warn")}>{sp.life} muaj</span>} /><KV k="Mospërputhje" v={<span className={cn(sp.discPct != null && sp.discPct > 0.5 && "text-warn")}>{sp.discPct == null ? "—" : `${sp.discPct.toFixed(2)}%`}</span>} /></div>))}
           </CardContent></Card>
         </TabsContent>
 
         <TabsContent value="tr">
           <Card><CardHeader><CardTitle>Fitimi dhe marzhi sipas produktit</CardTitle><CardDescription>Të ardhura, kosto e mallit të shitur, fitim bruto — gjithë periudha</CardDescription></CardHeader><CardContent>
-            {pp.filter(p => p.kg > 0).map(p => <div key={p.product.id} className="flex flex-wrap items-center gap-3 border-b py-3 text-sm last:border-0"><div className="min-w-44 flex-1"><div className="font-medium">{p.product.name}</div><div className="text-xs text-muted-foreground">{fmtKg(p.kg, 0)} shitur</div></div><KV k="Të ardhura" v={fmtLek(p.revenue)} /><KV k="Fitim bruto" v={<span className="text-entry">{fmtLek(p.profit)}</span>} /><KV k="Marzh" v={`${(p.margin * 100).toFixed(1)}%`} /><KV k="Kg vs muaji i kaluar" v={<Delta a={p.kgCur} b={p.kgPrev} small />} /></div>)}
+            {pp.filter(p => p.kg > 0).map(p => <div key={p.product.id} className="flex flex-wrap items-center gap-3 border-b py-3 text-sm last:border-0"><div className="min-w-44 flex-1"><div className="font-medium">{p.product.name}</div><div className="text-xs text-muted-foreground">{fmtKg(p.kg, 0)} shitur</div></div><KV k="Të ardhura" v={fmtLek(p.revenue)} /><KV k="Fitim bruto" v={<span className="text-entry">{fmtLek(p.profit)}{p.profit == null && " (kosto e panjohur)"}</span>} /><KV k="Marzh" v={fmtPercent(p.margin)} /><KV k="Kg vs muaji i kaluar" v={<Delta a={p.kgCur} b={p.kgPrev} small />} /></div>)}
           </CardContent></Card>
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <Card><CardHeader><CardTitle>Të ardhura mujore</CardTitle><CardDescription>Lek, 6 muajt e fundit</CardDescription></CardHeader><CardContent><div className="flex h-32 items-end gap-2">{fl.map(f => <div key={f.m} className="flex flex-1 flex-col items-center gap-1"><div className="w-full rounded-t-sm bg-exit" style={{ height: `${(f.revenue / Math.max(1, ...fl.map(x => x.revenue))) * 100}%`, minHeight: 2 }} title={fmtLek(f.revenue)} /><span className="text-[10px] text-muted-foreground">{f.label}</span></div>)}</div></CardContent></Card>

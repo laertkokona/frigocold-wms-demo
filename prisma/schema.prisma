@@ -66,14 +66,14 @@ model Client {
 model Shipment {
   id          String    @id @default(uuid()) @db.Uuid
   productId   String    @map("product_id") @db.Uuid
-  supplierId  String    @map("supplier_id") @db.Uuid
-  orderNr     String    @map("order_nr") @db.VarChar(100)
+  supplierId  String?   @map("supplier_id") @db.Uuid
+  orderNr     String?   @map("order_nr") @db.VarChar(100)
   loadType    String    @map("load_type") @db.VarChar(20)
-  countDoc    Int       @map("count_doc")
-  countActual Int       @map("count_actual")
-  netKgDoc    Decimal   @map("net_kg_doc") @db.Decimal(12, 3)
+  countDoc    Int?      @map("count_doc")
+  countActual Int?      @map("count_actual")
+  netKgDoc    Decimal?  @map("net_kg_doc") @db.Decimal(12, 3)
   netKgActual Decimal   @map("net_kg_actual") @db.Decimal(12, 3)
-  costPerKg   Decimal   @map("cost_per_kg") @db.Decimal(12, 4)
+  costPerKg   Decimal?  @map("cost_per_kg") @db.Decimal(12, 4)
   dateMode    String    @map("date_mode") @db.VarChar(20)
   prodFrom    String    @map("prod_from") @db.VarChar(10)
   prodTo      String?   @map("prod_to") @db.VarChar(10)
@@ -85,7 +85,7 @@ model Shipment {
   specs       String?   @db.VarChar(200)
   createdAt   DateTime  @default(now()) @map("created_at")
   product     Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
-  supplier    Supplier  @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  supplier    Supplier? @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   lots        ShipmentLot[]
   saleLines   SaleLine[]
   movements   Movement[]
@@ -131,7 +131,7 @@ model SaleLine {
   saleId     String   @map("sale_id") @db.Uuid
   shipmentId String   @map("shipment_id") @db.Uuid
   method     String   @db.VarChar(20)
-  qty        Int
+  qty        Int?
   kg         Decimal  @db.Decimal(12, 3)
   pricePerKg Decimal  @map("price_per_kg") @db.Decimal(12, 4)
   weights    Json?
@@ -150,7 +150,7 @@ model Movement {
   userId     String   @map("user_id") @db.Uuid
   type       String   @db.VarChar(20)
   kg         Decimal  @db.Decimal(12, 3)
-  qty        Int
+  qty        Int?
   createdAt  DateTime @default(now()) @map("created_at")
   shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
   sale       Sale?    @relation(fields: [saleId], references: [id], onDelete: Restrict)

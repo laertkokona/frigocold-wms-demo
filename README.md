@@ -45,6 +45,8 @@ npm run test
 npm run build
 ```
 
+For PostgreSQL integration checks, set `TEST_DATABASE_URL` to a disposable database and run `npm run test:integration`. This creates a separate test schema, exercises receiving, sales, concurrent stock checks and missing-cost reports, and removes the schema afterward.
+
 ## Current boundaries
 
 This backend supports the demo's actual receiving and sales workflow, which records a shipment total at arrival and individual carton or pallet weights at sale time. It does not implement the older WMS's carton QR label, AI photo scan, write-off, or recall screens. Supplier lots are stored on a shipment, but a sale draws from the shipment balance; a multi-lot shipment therefore needs conservative shipment-level recall. List and report pages now receive bounded responses, but the receiving, sales, detail, alert, and settings flows still use the full `/api/state` projection. Server reports also currently read the full dataset before calculating aggregates; SQL-level aggregates and focused workflow queries are the next scaling step.

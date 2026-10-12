@@ -11,7 +11,7 @@ import { useBrowse } from "@/lib/use-browse";
 import type { Supplier } from "@/lib/types";
 import { fmtDate, fmtKg, fmtLek } from "@/lib/utils";
 
-type Row = Supplier & { shipments: number; kg: number; spend: number; stock: number; last: string | null };
+type Row = Supplier & { shipments: number; kg: number; spend: number | null; stock: number; last: string | null };
 
 export default function Furnizuesit() {
   const list = useBrowse<Row>("suppliers", "spend", "desc");

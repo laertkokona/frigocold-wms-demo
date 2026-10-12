@@ -1,6 +1,7 @@
 import type { Client, Product, Sale, SaleLine, Shipment, Supplier, Thresholds } from "./types";
 import { remainingKg } from "./stock";
 import { daysUntil, todayInTirane } from "./utils";
+import { inventoryCosts, sumCosts } from "./costs";
 
 /* ---------- period ---------- */
 export type PeriodKey = "month" | "quarter" | "year" | "all";
@@ -27,29 +28,34 @@ export function buildPeriod(key: PeriodKey): Period {
 const inRange = (d: string, from: string, to: string) => d >= from && d <= to;
 
 /* ---------- core line economics (specific-identification costing) ---------- */
-export interface Econ { kg: number; revenue: number; cogs: number; profit: number; margin: number; }
-const zero = (): Econ => ({ kg: 0, revenue: 0, cogs: 0, profit: 0, margin: 0 });
-const seal = (e: Econ): Econ => ({ ...e, profit: e.revenue - e.cogs, margin: e.revenue ? (e.revenue - e.cogs) / e.revenue : 0 });
+export interface Econ { kg: number; revenue: number; cogs: number | null; profit: number | null; margin: number | null; missingCostKg: number; }
 
-export const costOf = (l: SaleLine, shipments: Shipment[]) => l.kg * (shipments.find(s => s.id === l.shipmentId)?.costPerKg ?? 0);
+export const costOf = (l: SaleLine, shipments: Shipment[]): number | null => {
+  const cost = shipments.find(s => s.id === l.shipmentId)?.costPerKg;
+  return cost == null ? null : l.kg * cost;
+};
 
 export function linesIn(sales: Sale[], from: string, to: string) {
   return sales.filter(s => inRange(s.date, from, to)).flatMap(s => s.lines.map(l => ({ ...l, date: s.date, clientId: s.clientId, saleId: s.id })));
 }
 export function econOf(lines: (SaleLine & { date: string })[], shipments: Shipment[]): Econ {
-  const e = zero();
-  for (const l of lines) { e.kg += l.kg; e.revenue += l.total; e.cogs += costOf(l, shipments); }
-  return seal(e);
+  const kg = lines.reduce((a, l) => a + l.kg, 0), revenue = lines.reduce((a, l) => a + l.total, 0);
+  const costs = lines.map(l => costOf(l, shipments));
+  const cogs = sumCosts(costs), profit = cogs == null ? null : revenue - cogs;
+  const missingCostKg = lines.reduce((a, l, i) => a + (costs[i] == null ? l.kg : 0), 0);
+  return { kg, revenue, cogs, profit, margin: profit == null ? null : revenue ? profit / revenue : 0, missingCostKg };
 }
 
 /* ---------- headline ---------- */
-export interface Headline extends Econ { purchaseSpend: number; inventoryValue: number; orders: number; }
+export interface Headline extends Econ { purchaseSpend: number | null; inventoryValue: number | null; knownInventoryValue: number; missingInventoryCostKg: number; orders: number; }
 export function headline(sales: Sale[], shipments: Shipment[], from: string, to: string): Headline {
   const e = econOf(linesIn(sales, from, to), shipments);
   return {
     ...e,
-    purchaseSpend: shipments.filter(s => inRange(s.entryDate, from, to)).reduce((a, s) => a + s.totalCost, 0),
-    inventoryValue: shipments.reduce((a, s) => a + remainingKg(s) * s.costPerKg, 0),
+    purchaseSpend: sumCosts(shipments.filter(s => inRange(s.entryDate, from, to)).map(s => s.totalCost)),
+    inventoryValue: inventoryCosts(shipments).value,
+    knownInventoryValue: inventoryCosts(shipments).knownValue,
+    missingInventoryCostKg: inventoryCosts(shipments).missingCostKg,
     orders: sales.filter(s => inRange(s.date, from, to)).length,
   };
 }
@@ -71,20 +77,20 @@ export const mLabel = (k: string) => ["Jan", "Shk", "Mar", "Pri", "Maj", "Qer", 
 export function monthlyEcon(sales: Sale[], shipments: Shipment[], months: string[]) {
   return months.map(m => {
     const e = econOf(sales.filter(s => s.date.slice(0, 7) === m).flatMap(s => s.lines.map(l => ({ ...l, date: s.date }))), shipments);
-    return { m, label: mLabel(m), ...e, spend: shipments.filter(s => s.entryDate.slice(0, 7) === m).reduce((a, s) => a + s.totalCost, 0) };
+    return { m, label: mLabel(m), ...e, spend: sumCosts(shipments.filter(s => s.entryDate.slice(0, 7) === m).map(s => s.totalCost)) };
   });
 }
 
 /* ---------- products ---------- */
-export interface ProductRow extends Econ { product: Product; avgSell: number; avgCost: number; spread: number; profitShare: number; prevKg: number; prevRevenue: number; prevMargin: number; }
+export interface ProductRow extends Econ { product: Product; avgSell: number; avgCost: number | null; spread: number | null; profitShare: number | null; prevKg: number; prevRevenue: number; prevMargin: number | null; }
 export function productRows(products: Product[], sales: Sale[], shipments: Shipment[], p: Period): ProductRow[] {
   const cur = linesIn(sales, p.from, p.to), prev = linesIn(sales, p.prevFrom, p.prevTo);
   const totalProfit = econOf(cur, shipments).profit;
   return products.map(pr => {
     const cl = cur.filter(l => l.productId === pr.id), pl = prev.filter(l => l.productId === pr.id);
     const e = econOf(cl, shipments), pe = econOf(pl, shipments);
-    return { product: pr, ...e, avgSell: e.kg ? e.revenue / e.kg : 0, avgCost: e.kg ? e.cogs / e.kg : 0, spread: e.kg ? (e.revenue - e.cogs) / e.kg : 0, profitShare: totalProfit ? e.profit / totalProfit : 0, prevKg: pe.kg, prevRevenue: pe.revenue, prevMargin: pe.margin };
-  }).filter(r => r.kg > 0 || r.prevKg > 0).sort((a, b) => b.profit - a.profit);
+    return { product: pr, ...e, avgSell: e.kg ? e.revenue / e.kg : 0, avgCost: e.cogs == null ? null : e.kg ? e.cogs / e.kg : 0, spread: e.profit == null ? null : e.kg ? e.profit / e.kg : 0, profitShare: totalProfit == null || e.profit == null ? null : totalProfit ? e.profit / totalProfit : 0, prevKg: pe.kg, prevRevenue: pe.revenue, prevMargin: pe.margin };
+  }).filter(r => r.kg > 0 || r.prevKg > 0).sort((a, b) => (b.profit ?? -Infinity) - (a.profit ?? -Infinity));
 }
 
 /** Monthly avg selling price vs avg cost per kg, for one product. */
@@ -93,21 +99,21 @@ export function priceSeries(productId: string, sales: Sale[], shipments: Shipmen
     const ls = sales.filter(s => s.date.slice(0, 7) === m).flatMap(s => s.lines).filter(l => l.productId === productId);
     const kg = ls.reduce((a, l) => a + l.kg, 0);
     const rev = ls.reduce((a, l) => a + l.total, 0);
-    const cost = ls.reduce((a, l) => a + costOf(l, shipments), 0);
-    return { m, label: mLabel(m), kg, sell: kg ? rev / kg : null, cost: kg ? cost / kg : null };
+    const cost = sumCosts(ls.map(l => costOf(l, shipments)));
+    return { m, label: mLabel(m), kg, sell: kg ? rev / kg : null, cost: kg && cost != null ? cost / kg : null };
   });
 }
 
 /* ---------- clients ---------- */
-export interface ClientRow extends Econ { client: Client; orders: number; avgPrice: number; profitShare: number; }
+export interface ClientRow extends Econ { client: Client; orders: number; avgPrice: number; profitShare: number | null; }
 export function clientRows(clients: Client[], sales: Sale[], shipments: Shipment[], p: Period): ClientRow[] {
   const cur = linesIn(sales, p.from, p.to);
   const totalProfit = econOf(cur, shipments).profit;
   return clients.map(c => {
     const ls = cur.filter(l => l.clientId === c.id);
     const e = econOf(ls, shipments);
-    return { client: c, ...e, orders: new Set(ls.map(l => l.saleId)).size, avgPrice: e.kg ? e.revenue / e.kg : 0, profitShare: totalProfit ? e.profit / totalProfit : 0 };
-  }).filter(r => r.kg > 0).sort((a, b) => b.profit - a.profit);
+    return { client: c, ...e, orders: new Set(ls.map(l => l.saleId)).size, avgPrice: e.kg ? e.revenue / e.kg : 0, profitShare: totalProfit == null || e.profit == null ? null : totalProfit ? e.profit / totalProfit : 0 };
+  }).filter(r => r.kg > 0).sort((a, b) => (b.profit ?? -Infinity) - (a.profit ?? -Infinity));
 }
 
 /** What each client paid per kg for one product in the period — price dispersion. */
@@ -124,40 +130,41 @@ export function priceDispersion(productId: string, clients: Client[], sales: Sal
 }
 
 /* ---------- suppliers ---------- */
-export interface SupplierRow { supplier: Supplier; shipments: number; kgBought: number; spend: number; avgCost: number; shortfallKg: number; shortfallLek: number; realised: Econ; }
+export interface SupplierRow { supplier: Supplier; shipments: number; kgBought: number; spend: number | null; avgCost: number | null; shortfallKg: number | null; shortfallLek: number | null; realised: Econ; }
 export function supplierRows(suppliers: Supplier[], shipments: Shipment[], sales: Sale[], p: Period): SupplierRow[] {
   return suppliers.map(sp => {
     const sh = shipments.filter(s => s.supplierId === sp.id && inRange(s.entryDate, p.from, p.to));
     const all = shipments.filter(s => s.supplierId === sp.id);
     const kgBought = sh.reduce((a, s) => a + s.netKgActual, 0);
-    const spend = sh.reduce((a, s) => a + s.totalCost, 0);
-    const shortfallKg = all.reduce((a, s) => a + (s.netKgDoc - s.netKgActual), 0);
-    const shortfallLek = all.reduce((a, s) => a + (s.netKgDoc - s.netKgActual) * s.costPerKg, 0);
+    const spend = sumCosts(sh.map(s => s.totalCost));
+    const shortfallKg = sumCosts(all.map(s => s.netKgDoc == null ? null : s.netKgDoc - s.netKgActual));
+    const shortfallLek = sumCosts(all.map(s => s.netKgDoc == null || s.costPerKg == null ? null : (s.netKgDoc - s.netKgActual) * s.costPerKg));
     const ids = new Set(all.map(s => s.id));
     const ls = linesIn(sales, p.from, p.to).filter(l => ids.has(l.shipmentId));
-    return { supplier: sp, shipments: sh.length, kgBought, spend, avgCost: kgBought ? spend / kgBought : 0, shortfallKg, shortfallLek, realised: econOf(ls, shipments) };
-  }).filter(r => r.shipments > 0 || r.realised.kg > 0).sort((a, b) => b.spend - a.spend);
+    return { supplier: sp, shipments: sh.length, kgBought, spend, avgCost: spend == null ? null : kgBought ? spend / kgBought : 0, shortfallKg, shortfallLek, realised: econOf(ls, shipments) };
+  }).filter(r => r.shipments > 0 || r.realised.kg > 0).sort((a, b) => (b.spend ?? -Infinity) - (a.spend ?? -Infinity));
 }
 
 /* ---------- lots / inventory capital ---------- */
-export interface LotRow { shipment: Shipment; product?: Product; supplier?: Supplier; invested: number; soldKg: number; revenue: number; cogsSold: number; realised: number; margin: number; remainKg: number; remainValue: number; pctSold: number; daysHeld: number; expDays: number; }
+export interface LotRow { shipment: Shipment; product?: Product; supplier?: Supplier; invested: number | null; soldKg: number; revenue: number; cogsSold: number | null; realised: number | null; margin: number | null; remainKg: number; remainValue: number | null; pctSold: number; daysHeld: number; expDays: number; }
 export function lotRows(shipments: Shipment[], products: Product[], suppliers: Supplier[], sales: Sale[]): LotRow[] {
   return shipments.map(s => {
     const ls = sales.flatMap(x => x.lines).filter(l => l.shipmentId === s.id);
     const revenue = ls.reduce((a, l) => a + l.total, 0);
     const soldKg = ls.reduce((a, l) => a + l.kg, 0);
-    const cogsSold = soldKg * s.costPerKg;
+    const cogsSold = soldKg === 0 ? 0 : s.costPerKg == null ? null : soldKg * s.costPerKg;
+    const realised = cogsSold == null ? null : revenue - cogsSold;
     const remain = remainingKg(s);
     return {
       shipment: s, product: products.find(p => p.id === s.productId), supplier: suppliers.find(x => x.id === s.supplierId),
-      invested: s.totalCost, soldKg, revenue, cogsSold, realised: revenue - cogsSold, margin: revenue ? (revenue - cogsSold) / revenue : 0,
-      remainKg: remain, remainValue: remain * s.costPerKg, pctSold: s.netKgActual ? soldKg / s.netKgActual : 0,
+      invested: s.totalCost, soldKg, revenue, cogsSold, realised, margin: realised == null ? null : revenue ? realised / revenue : 0,
+      remainKg: remain, remainValue: remain === 0 ? 0 : s.costPerKg == null ? null : remain * s.costPerKg, pctSold: s.netKgActual ? soldKg / s.netKgActual : 0,
       daysHeld: -daysUntil(s.entryDate), expDays: daysUntil(s.expFrom),
     };
-  }).sort((a, b) => b.remainValue - a.remainValue);
+  }).sort((a, b) => (b.remainValue ?? -Infinity) - (a.remainValue ?? -Infinity));
 }
 
 export function capitalAtRisk(shipments: Shipment[], t: Thresholds) {
   const at = shipments.filter(s => remainingKg(s) > 0 && daysUntil(s.expFrom) <= t.expiryDays);
-  return { kg: at.reduce((a, s) => a + remainingKg(s), 0), value: at.reduce((a, s) => a + remainingKg(s) * s.costPerKg, 0), lots: at.length };
+  return { kg: at.reduce((a, s) => a + remainingKg(s), 0), ...inventoryCosts(at), lots: at.length };
 }

@@ -31,10 +31,10 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
     case "suppliers": return Prisma.sql`
       SELECT s.id, s.name, s.country, s.contact, s.phone,
         COALESCE(t.shipments, 0)::int AS shipments, COALESCE(t.kg, 0) AS kg,
-        COALESCE(t.spend, 0) AS spend, COALESCE(t.stock, 0) AS stock, t.last
+        CASE WHEN t.shipments IS NULL THEN 0 ELSE t.spend END AS spend, COALESCE(t.stock, 0) AS stock, t.last
       FROM suppliers s LEFT JOIN (
         SELECT sh.supplier_id, COUNT(*)::int AS shipments, SUM(sh.net_kg_actual) AS kg,
-          SUM(sh.net_kg_actual * sh.cost_per_kg) AS spend,
+          CASE WHEN COUNT(*) FILTER (WHERE sh.cost_per_kg IS NULL) > 0 THEN NULL ELSE SUM(sh.net_kg_actual * sh.cost_per_kg) END AS spend,
           SUM(COALESCE(b.kg, 0)) AS stock, MAX(sh.entry_date) AS last
         FROM shipments sh LEFT JOIN (
           SELECT shipment_id, SUM(kg) AS kg FROM movements GROUP BY shipment_id
@@ -48,10 +48,10 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         sh.load_type AS "loadType", sh.count_actual AS "countActual",
         sh.net_kg_actual AS "netKgActual", sh.cost_per_kg AS "costPerKg",
         sh.entry_date, sh.exp_from AS expiry,
-        COALESCE(b.kg, 0) AS remaining_kg, COALESCE(b.qty, 0)::int AS remaining_count,
+        COALESCE(b.kg, 0) AS remaining_kg, CASE WHEN sh.count_actual IS NULL THEN NULL ELSE COALESCE(b.qty, 0)::int END AS remaining_count,
         COALESCE(l.lots, '') AS lots, sh.fixed_kg AS "fixedKg", sh.origin, sh.specs
       FROM shipments sh JOIN products p ON p.id = sh.product_id
-      JOIN suppliers su ON su.id = sh.supplier_id
+      LEFT JOIN suppliers su ON su.id = sh.supplier_id
       LEFT JOIN (SELECT shipment_id, SUM(kg) AS kg, SUM(qty) AS qty FROM movements GROUP BY shipment_id) b ON b.shipment_id = sh.id
       LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
       WHERE COALESCE(b.kg, 0) > 0 AND (
@@ -67,9 +67,9 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         SELECT sh.id, sh.entry_date AS date, 'IN'::text AS type, p.name AS product,
           COALESCE(l.lots, '') AS lot, su.name AS party, sh.count_actual AS qty,
           sh.net_kg_actual AS kg, sh.net_kg_actual * sh.cost_per_kg AS value,
-          CONCAT('Porosia ', sh.order_nr) AS method
+          CASE WHEN sh.order_nr IS NULL THEN 'Pa nr. porosie' ELSE CONCAT('Porosia ', sh.order_nr) END AS method
         FROM shipments sh JOIN products p ON p.id = sh.product_id
-        JOIN suppliers su ON su.id = sh.supplier_id
+        LEFT JOIN suppliers su ON su.id = sh.supplier_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         UNION ALL
         SELECT sl.id, sa.date, 'OUT'::text, p.name, COALESCE(l.lots, ''), c.name,
@@ -87,7 +87,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         SELECT sh.id, 'ship'::text AS type, CONCAT('Lot ', COALESCE(l.lots, ''), ' · ', p.name) AS title,
           CONCAT('Porosia ', sh.order_nr, ' · ', su.name, ' · hyri ', sh.entry_date) AS sub,
           COALESCE(b.kg, 0) AS amount, sh.entry_date AS date
-        FROM shipments sh JOIN products p ON p.id = sh.product_id JOIN suppliers su ON su.id = sh.supplier_id
+        FROM shipments sh JOIN products p ON p.id = sh.product_id LEFT JOIN suppliers su ON su.id = sh.supplier_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         LEFT JOIN (SELECT shipment_id, SUM(kg) AS kg FROM movements GROUP BY shipment_id) b ON b.shipment_id = sh.id
         WHERE sh.order_nr ILIKE ${match} OR p.name ILIKE ${match} OR su.name ILIKE ${match}

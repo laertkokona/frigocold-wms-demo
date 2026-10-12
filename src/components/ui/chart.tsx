@@ -42,6 +42,7 @@ export function LineChart({ data, aLabel, bLabel, unit = "", height = 180, class
 }
 
 /** Horizontal proportion bar. */
-export function Bar({ value, max, tone = "exit", className }: { value: number; max: number; tone?: "exit" | "entry" | "warn" | "danger"; className?: string }) {
+export function Bar({ value, max, tone = "exit", className }: { value: number | null; max: number; tone?: "exit" | "entry" | "warn" | "danger"; className?: string }) {
+  if (value == null) return <span className="flex-1 text-xs text-muted-foreground">—</span>;
   return <div className={cn("h-2 flex-1 overflow-hidden rounded bg-secondary", className)}><div className={cn("h-full rounded", tone === "exit" && "bg-exit", tone === "entry" && "bg-entry", tone === "warn" && "bg-warn", tone === "danger" && "bg-danger")} style={{ width: `${Math.max(0, Math.min(100, max ? (value / max) * 100 : 0))}%` }} /></div>;
 }

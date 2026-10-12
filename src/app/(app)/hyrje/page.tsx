@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PageHeader } from "@/components/shell";
 import { ProductDialog, SupplierDialog } from "@/components/entity-dialogs";
 import { remainingKg, useStore } from "@/lib/store";
+import { IncompleteShipment } from "@/components/incomplete-shipment";
 import { loadSpecLabel } from "@/lib/stock";
 import type { DateMode, Draft, LoadType, LotAlloc, Product } from "@/lib/types";
 import { cn, fmtDate, fmtKg, fmtLek, fmtNum, todayInTirane } from "@/lib/utils";
@@ -42,13 +43,13 @@ export default function HyrjePage() {
   const [newProd, setNewProd] = useState(false);
   const [newSup, setNewSup] = useState(false);
   const [prefilled, setPrefilled] = useState<string | null>(null);
-  const [saved, setSaved] = useState<{ count: number; kg: number; total: number } | null>(null);
+  const [saved, setSaved] = useState<{ count: number | null; kg: number; total: number | null } | null>(null);
   const requestId = useRef<string | null>(null);
 
   const unit = form.loadType === "CARTON" ? "kartona" : "paleta";
   const cntDoc = +form.countDoc || 0, cntAct = +form.countActual || 0, wDoc = +form.netKgDoc || 0, wAct = +form.netKgActual || 0;
   const perKg = form.costUnit === "kg" ? (+form.costVal || 0) : (+form.costVal || 0) / 1000;
-  const total = wAct * perKg;
+  const total = form.costVal.trim() ? wAct * perKg : null;
   const lotSum = form.lots.reduce((a, l) => a + (+l.qty || 0), 0);
   const avg = cntAct > 0 ? wAct / cntAct : 0;
   const isFixed = form.loadType === "CARTON" && form.weighMode === "FIXED", fixedKg = isFixed ? +form.fixedKg || 0 : 0;
@@ -93,22 +94,25 @@ export default function HyrjePage() {
     setStep("form"); toast("Drafti u rikthye — vazhdo aty ku e le");
   };
   const toDraftData = () => ({
-    orderNr: form.orderNr, supplierId: form.supplierId, entryDate: form.entryDate, ...specOf,
-    countDoc: cntDoc, countActual: cntAct, netKgDoc: wDoc, netKgActual: wAct,
+    orderNr: form.orderNr.trim() || null, supplierId: form.supplierId || null, entryDate: form.entryDate, ...specOf,
+    countDoc: form.countDoc.trim() ? cntDoc : null, countActual: form.countActual.trim() ? cntAct : null, netKgDoc: form.netKgDoc.trim() ? wDoc : null, netKgActual: wAct,
     lots: form.lots.filter(l => l.lotNumber).map(l => ({ lotNumber: l.lotNumber, qty: +l.qty || 0 })),
-    costPerKg: perKg, totalCost: total, dateMode: form.dateMode,
-    prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined,
+    costPerKg: form.costVal.trim() ? perKg : null, totalCost: total, dateMode: form.dateMode,
+    prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" && form.prodTo ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined,
   });
   const saveDraft = async () => { if (!product) return; try { const d = await store.saveDraft({ id: draftId ?? undefined, productId: product.id, data: toDraftData() }); setDraftId(d.id); toast.success("Drafti u ruajt"); setStep("product"); } catch (e) { toast.error(e instanceof Error ? e.message : "Drafti nuk u ruajt"); } };
-  const canReview = form.orderNr && form.supplierId && form.entryDate && cntAct > 0 && wAct > 0 && perKg > 0 && form.expFrom && (!isFixed || fixedKg > 0) && lotSum === cntAct && form.lots.every(l => l.lotNumber.trim());
+  const hasCount = !!form.countActual.trim();
+  const hasLots = form.lots.some(l => l.lotNumber.trim() || l.qty.trim());
+  const optionalFieldsValid = (!hasCount || Number.isSafeInteger(cntAct) && cntAct > 0) && (!form.countDoc.trim() || Number.isSafeInteger(cntDoc) && Number(form.countDoc) >= 0) && (!form.netKgDoc.trim() || Number(form.netKgDoc) >= 0) && (!form.costVal.trim() || perKg > 0);
+  const canReview = form.entryDate && wAct > 0 && form.expFrom && (form.dateMode !== "RANGE" || form.expTo && form.expTo >= form.expFrom) && optionalFieldsValid && (!isFixed || fixedKg > 0) && (!hasLots || hasCount && lotSum === cntAct && form.lots.every(l => l.lotNumber.trim() && Number.isSafeInteger(+l.qty) && +l.qty > 0));
   const finalize = async () => {
     if (!product) return;
     const lots: LotAlloc[] = form.lots.filter(l => l.lotNumber).map(l => ({ lotNumber: l.lotNumber, qty: +l.qty || 0 }));
     try {
       requestId.current ??= crypto.randomUUID();
-      await store.addShipment({ productId: product.id, supplierId: form.supplierId, orderNr: form.orderNr, entryDate: form.entryDate, ...specOf, countDoc: cntDoc, countActual: cntAct, netKgDoc: wDoc, netKgActual: wAct, lots, costPerKg: perKg, totalCost: total, dateMode: form.dateMode, prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined, draftId: draftId ?? undefined, requestId: requestId.current });
+      await store.addShipment({ productId: product.id, supplierId: form.supplierId || null, orderNr: form.orderNr.trim() || null, entryDate: form.entryDate, ...specOf, countDoc: form.countDoc.trim() ? cntDoc : null, countActual: form.countActual.trim() ? cntAct : null, netKgDoc: form.netKgDoc.trim() ? wDoc : null, netKgActual: wAct, lots, costPerKg: form.costVal.trim() ? perKg : null, totalCost: total, dateMode: form.dateMode, prodFrom: form.prodFrom, prodTo: form.dateMode === "RANGE" && form.prodTo ? form.prodTo : undefined, expFrom: form.expFrom, expTo: form.dateMode === "RANGE" ? form.expTo : undefined, draftId: draftId ?? undefined, requestId: requestId.current });
       requestId.current = null;
-      setSaved({ count: cntAct, kg: wAct, total }); setStep("done"); toast.success("Dërgesa u regjistrua");
+      setSaved({ count: hasCount ? cntAct : null, kg: wAct, total }); setStep("done"); toast.success("Dërgesa u regjistrua");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Dërgesa nuk u regjistrua"); }
   };
   const reset = () => { requestId.current = null; setPrefilled(null); setStep("product"); setProduct(null); setForm(emptyForm()); setDraftId(null); setSaved(null); };
@@ -127,7 +131,7 @@ export default function HyrjePage() {
                   <div key={d.id} className="flex items-center gap-3 rounded-lg border border-warn/30 bg-warn/10 px-4 py-3">
                     <button onClick={() => resume(d)} className="flex flex-1 items-center gap-3 text-left">
                       <Save className="h-4 w-4 shrink-0 text-warn" />
-                      <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-warn">Porosia {d.data.orderNr || "—"} · {p?.name}</div><div className="text-xs text-warn/80">{d.data.countActual ?? 0} {d.data.loadType === "PALLET" ? "paleta" : "kartona"} · {fmtNum(d.data.netKgActual ?? 0)} kg · ruajtur {new Date(d.savedAt).toLocaleTimeString("sq-AL", { hour: "2-digit", minute: "2-digit" })}</div></div>
+                      <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-warn">Porosia {d.data.orderNr || "—"} · {p?.name}</div><div className="text-xs text-warn/80">{d.data.countActual ?? "sasi e panjohur"} {d.data.loadType === "PALLET" ? "paleta" : "kartona"} · {fmtNum(d.data.netKgActual ?? 0)} kg · ruajtur {new Date(d.savedAt).toLocaleTimeString("sq-AL", { hour: "2-digit", minute: "2-digit" })}</div></div>
                     </button>
                     <Button variant="ghost" size="icon" aria-label="Fshi draftin" onClick={async () => { try { await store.deleteDraft(d.id); toast("Drafti u fshi"); } catch (e) { toast.error(e instanceof Error ? e.message : "Fshirja dështoi"); } }}><Trash2 className="h-4 w-4" /></Button>
                   </div>); })}
@@ -155,11 +159,11 @@ export default function HyrjePage() {
 
           <Section n={1} title="Të dhënat e porosisë">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div><Label>Nr. i porosisë <Req /></Label><Input value={form.orderNr} onChange={e => set({ orderNr: e.target.value })} placeholder="p.sh. 4471" /><Hint>Disa produkte mund të ndajnë të njëjtin nr. porosie</Hint></div>
-              <div><Label>Furnizuesi <Req /></Label>
-                <Select value={form.supplierId} onValueChange={v => v === "__new" ? setNewSup(true) : chooseSupplier(v)}>
+              <div><Label>Nr. i porosisë (opsionale)</Label><Input value={form.orderNr} onChange={e => set({ orderNr: e.target.value })} placeholder="p.sh. 4471" /><Hint>Disa produkte mund të ndajnë të njëjtin nr. porosie</Hint></div>
+              <div><Label>Furnizuesi (opsional)</Label>
+                <Select value={form.supplierId || "__unknown"} onValueChange={v => v === "__new" ? setNewSup(true) : chooseSupplier(v === "__unknown" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder="Zgjidh furnizuesin" /></SelectTrigger>
-                  <SelectContent>{store.suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name} ({s.country})</SelectItem>)}<SelectItem value="__new">+ Furnizues i ri…</SelectItem></SelectContent>
+                  <SelectContent><SelectItem value="__unknown">Pa furnizues</SelectItem>{store.suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name} ({s.country})</SelectItem>)}<SelectItem value="__new">+ Furnizues i ri…</SelectItem></SelectContent>
                 </Select>
               </div>
               <div>
@@ -176,8 +180,8 @@ export default function HyrjePage() {
               <div><Label>Pesha e kartonave</Label><Segmented value={form.weighMode} onChange={v => set({ weighMode: v })} options={[{ value: "VARIABLE", label: "E ndryshme" }, { value: "FIXED", label: "Fikse" }]} /><Hint>{form.weighMode === "FIXED" ? "Çdo karton ka të njëjtën peshë — shitja bëhet me numër kartonash." : "Çdo karton ka peshë tjetër — shitja bëhet me peshat e kartonave ose me totalin nga fatura."}</Hint></div>
               {form.weighMode === "FIXED" && <div><Label>Kg për karton <Req /></Label><Input type="number" step="0.001" value={form.fixedKg} onChange={e => set({ fixedKg: e.target.value })} placeholder="p.sh. 10" />{fixedKg > 0 && cntAct > 0 && Math.abs(fixedKg * cntAct - wAct) > 0.01 && <Hint className="text-warn">{cntAct} × {fixedKg} kg = {fmtNum(fixedKg * cntAct, 2)} kg, ndërsa pesha neto është {fmtNum(wAct, 2)} kg.</Hint>}</div>}
             </div>}
-            <DualField label={`Numri i ${unit}`} doc={form.countDoc} act={form.countActual} onDoc={v => set({ countDoc: v, countActual: v })} onAct={v => set({ countActual: v })} diff={cntAct - cntDoc} fmt={d => `${d > 0 ? "+" : ""}${d}`} />
-            <DualField label="Pesha neto totale (kg)" doc={form.netKgDoc} act={form.netKgActual} onDoc={v => set({ netKgDoc: v, netKgActual: v })} onAct={v => set({ netKgActual: v })} diff={+(wAct - wDoc).toFixed(2)} fmt={d => `${d > 0 ? "+" : ""}${d.toFixed(2)} kg`} step="0.01" hint={avg > 0 ? `Mesatarisht ${avg.toFixed(2)} kg / ${form.loadType === "CARTON" ? "karton" : "paletë"}` : undefined} />
+            <DualField label={`Numri i ${unit} (opsional)`} doc={form.countDoc} act={form.countActual} onDoc={v => set({ countDoc: v, ...(v.trim() ? { countActual: v } : {}) })} onAct={v => set({ countActual: v })} diff={form.countDoc.trim() && form.countActual.trim() ? cntAct - cntDoc : null} fmt={d => `${d > 0 ? "+" : ""}${d}`} />
+            <DualField label="Pesha neto totale (kg) — dokumenti opsional" doc={form.netKgDoc} act={form.netKgActual} onDoc={v => set({ netKgDoc: v, ...(v.trim() ? { netKgActual: v } : {}) })} onAct={v => set({ netKgActual: v })} diff={form.netKgDoc.trim() ? +(wAct - wDoc).toFixed(2) : null} fmt={d => `${d > 0 ? "+" : ""}${d.toFixed(2)} kg`} step="0.01" hint={avg > 0 ? `Mesatarisht ${avg.toFixed(2)} kg / ${form.loadType === "CARTON" ? "karton" : "paletë"}` : undefined} />
           </Section>
 
           <Section n={3} title="Specifikimet e ngarkesës">
@@ -188,7 +192,9 @@ export default function HyrjePage() {
             </div>
           </Section>
 
-          <Section n={4} title="Lotet">
+          <Section n={4} title="Lotet (opsionale)">
+            {!hasCount && <Hint>Pa numër njësish, stoku ndiqet vetëm në kg. Plotëso sasinë faktike për të shtuar lote.</Hint>}
+            {(hasCount || hasLots) && <>
             <Hint className="mb-3">Nëse ngarkesa vjen nga disa lote, shto secilin me sasinë përkatëse të {unit}.</Hint>
             <div className="space-y-2">
               {form.lots.map((l, i) => (
@@ -201,15 +207,16 @@ export default function HyrjePage() {
             </div>
             <Button variant="outline" size="sm" className="mt-2" onClick={() => set({ lots: [...form.lots, { lotNumber: "", qty: "" }] })}><Plus /> Shto lot</Button>
             {cntAct > 0 && <div className={cn("mt-3 flex items-center justify-between rounded-md px-3 py-2 text-xs", lotSum === cntAct ? "bg-entry/10 text-entry" : "bg-warn/10 text-warn")}><span>Shuma e loteve</span><span className="tabular">{lotSum} / {cntAct} {unit}</span></div>}
+            </>}
           </Section>
 
-          <Section n={5} title="Kosto">
+          <Section n={5} title="Kosto (opsionale)">
             <div className="grid gap-4 sm:grid-cols-2">
               <div><Label>Njësia e kostos</Label><Segmented value={form.costUnit} onChange={v => set({ costUnit: v })} options={[{ value: "kg", label: "për kg" }, { value: "ton", label: "për ton" }]} /></div>
-              <div><Label>Kosto totale {form.costUnit === "kg" ? "për kg" : "për ton"} (Lek) <Req /></Label><Input type="number" value={form.costVal} onChange={e => set({ costVal: e.target.value })} placeholder={form.costUnit === "kg" ? "p.sh. 340" : "p.sh. 340000"} /><Hint>Përfshin transportin, doganën etj. — dhënë nga financa</Hint></div>
+              <div><Label>Kosto totale {form.costUnit === "kg" ? "për kg" : "për ton"} (Lek)</Label><Input type="number" value={form.costVal} onChange={e => set({ costVal: e.target.value })} placeholder={form.costUnit === "kg" ? "p.sh. 340" : "p.sh. 340000"} /><Hint>Përfshin transportin, doganën etj. — dhënë nga financa. Lëre bosh kur kostoja nuk dihet; vlera e stokut dhe fitimi do të shënohen si të paplotë.</Hint></div>
             </div>
             <div className="mt-3 rounded-lg bg-secondary p-4">
-              <Row k="Pesha neto faktike" v={fmtKg(wAct)} /><Row k="Kosto për kg" v={fmtNum(perKg, 2) + " Lek"} />
+              <Row k="Pesha neto faktike" v={fmtKg(wAct)} /><Row k="Kosto për kg" v={form.costVal.trim() ? fmtNum(perKg, 2) + " Lek" : "E panjohur"} />
               <div className="mt-2 flex items-center justify-between border-t pt-3"><span className="text-sm font-medium">Vlera totale e dërgesës</span><span className="text-xl font-semibold text-entry tabular">{fmtLek(total)}</span></div>
             </div>
           </Section>
@@ -231,7 +238,7 @@ export default function HyrjePage() {
             <Button variant="warn" size="lg" onClick={saveDraft}><Save /> Ruaj si draft</Button>
             <Button variant="entry" size="lg" disabled={!canReview} onClick={() => setStep("review")}>Verifiko <ArrowRight /></Button>
           </div>
-          {!canReview && <p className="mt-2 text-xs text-muted-foreground">Për të verifikuar duhen: nr. porosie, furnizuesi, data e hyrjes, sasia dhe pesha faktike, kostoja, data e skadimit{isFixed ? " dhe kg për karton" : ""}.</p>}
+          {!canReview && <p className="mt-2 text-xs text-muted-foreground">Për të verifikuar duhen: data e hyrjes, pesha faktike pozitive dhe data e skadimit. Fushat opsionale duhet të jenë të vlefshme kur plotësohen{isFixed ? " dhe kg për karton" : ""}.</p>}
           <SupplierDialog open={newSup} onClose={() => setNewSup(false)} onSaved={s => chooseSupplier(s.id)} />
         </motion.div>
       )}
@@ -239,18 +246,18 @@ export default function HyrjePage() {
       {step === "review" && product && (
         <motion.div key="review" {...fade}>
           <PageHeader title="Verifiko dërgesën" sub="Hapi 3 nga 3" right={<Button variant="ghost" onClick={() => setStep("form")}><ArrowLeft /> Ndrysho</Button>} />
-          <div className="mb-4 space-y-2">
-            {cntDoc !== cntAct && <Banner tone="warn"><b>Mospërputhje sasie.</b> Dokumenti: {cntDoc} · Faktik: {cntAct} ({cntAct - cntDoc > 0 ? "+" : ""}{cntAct - cntDoc} {unit}). Do të regjistrohet me dërgesën.</Banner>}
-            {wDoc !== wAct && <Banner tone="warn"><b>Mospërputhje peshe.</b> Dokumenti: {fmtKg(wDoc)} · Faktike: {fmtKg(wAct)} ({wAct - wDoc > 0 ? "+" : ""}{(wAct - wDoc).toFixed(2)} kg).</Banner>}
-            {lotSum !== cntAct && <Banner tone="warn"><b>Lotet nuk përputhen.</b> Shuma e loteve: {lotSum} · Totali: {cntAct}.</Banner>}
+          <div className="mb-4 space-y-2"><IncompleteShipment shipment={{ supplierId: form.supplierId || null, orderNr: form.orderNr || null, countActual: hasCount ? cntAct : null, costPerKg: form.costVal.trim() ? perKg : null, lots: form.lots.filter(l => l.lotNumber.trim()).map(l => ({ lotNumber: l.lotNumber, qty: +l.qty })) }} />
+            {hasCount && form.countDoc.trim() && cntDoc !== cntAct && <Banner tone="warn"><b>Mospërputhje sasie.</b> Dokumenti: {cntDoc} · Faktik: {cntAct} ({cntAct - cntDoc > 0 ? "+" : ""}{cntAct - cntDoc} {unit}). Do të regjistrohet me dërgesën.</Banner>}
+            {form.netKgDoc.trim() && wDoc !== wAct && <Banner tone="warn"><b>Mospërputhje peshe.</b> Dokumenti: {fmtKg(wDoc)} · Faktike: {fmtKg(wAct)} ({wAct - wDoc > 0 ? "+" : ""}{(wAct - wDoc).toFixed(2)} kg).</Banner>}
+            {hasLots && lotSum !== cntAct && <Banner tone="warn"><b>Lotet nuk përputhen.</b> Shuma e loteve: {lotSum} · Totali: {cntAct}.</Banner>}
           </div>
           <div className="grid gap-x-8 gap-y-1 rounded-lg border bg-card p-5 sm:grid-cols-2">
             <Row k="Produkti" v={product.name} /><Row k="Pesha neto" v={fmtKg(wAct)} />
             <Row k="Data e hyrjes" v={<span className={form.entryDate !== todayInTirane() ? "text-warn" : undefined}>{form.entryDate ? fmtDate(form.entryDate) : "—"}</span>} /><Row k="Lotet" v={form.lots.filter(l => l.lotNumber).map(l => `${l.lotNumber} (${l.qty || 0})`).join(", ") || "—"} />
-            <Row k="Nr. porosie" v={form.orderNr} /><Row k="Kosto / kg" v={fmtNum(perKg, 2) + " Lek"} />
+            <Row k="Nr. porosie" v={form.orderNr || "—"} /><Row k="Kosto / kg" v={form.costVal.trim() ? fmtNum(perKg, 2) + " Lek" : "E panjohur"} />
             <Row k="Furnizuesi" v={supplier?.name ?? "—"} /><Row k="Vlera totale" v={<span className="text-entry">{fmtLek(total)}</span>} />
             <Row k="Specifikimet" v={loadSpecLabel(specOf)} /><Row k="Prodhimi" v={form.prodFrom ? fmtDate(form.prodFrom) + (form.dateMode === "RANGE" && form.prodTo ? ` – ${fmtDate(form.prodTo)}` : "") : "—"} />
-            <Row k="Sasia" v={`${cntAct} ${unit}`} /><Row k="Skadimi" v={form.expFrom ? fmtDate(form.expFrom) + (form.dateMode === "RANGE" ? " (më e hershmja)" : "") : "—"} />
+            <Row k="Sasia" v={hasCount ? `${cntAct} ${unit}` : "E panjohur — vetëm kg"} /><Row k="Skadimi" v={form.expFrom ? fmtDate(form.expFrom) + (form.dateMode === "RANGE" ? " (më e hershmja)" : "") : "—"} />
           </div>
           <div className="mt-4 grid max-w-md grid-cols-2 gap-3"><Button variant="outline" size="lg" onClick={() => setStep("form")}>Kthehu & ndrysho</Button><Button variant="entry" size="lg" disabled={!canReview} onClick={finalize}><Check /> Ruaj dërgesën</Button></div>
         </motion.div>
@@ -260,8 +267,8 @@ export default function HyrjePage() {
         <motion.div key="done" {...fade} className="mx-auto max-w-sm py-10 text-center">
           <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 260, damping: 18 }} className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-entry/40 bg-entry/15"><Check className="h-8 w-8 text-entry" /></motion.div>
           <h2 className="text-lg font-semibold">Dërgesa u regjistrua</h2>
-          <p className="mb-5 text-sm text-muted-foreground">Porosia {form.orderNr} · {product.name}</p>
-          <div className="rounded-lg border bg-card p-4 text-left"><Row k="Sasia" v={`${saved.count} ${unit}`} /><Row k="Pesha neto" v={fmtKg(saved.kg)} /><Row k="Vlera totale" v={<span className="text-entry">{fmtLek(saved.total)}</span>} /></div>
+          <p className="mb-5 text-sm text-muted-foreground">Porosia {form.orderNr || "—"} · {product.name}</p>
+          <div className="rounded-lg border bg-card p-4 text-left"><Row k="Sasia" v={saved.count == null ? "E panjohur" : `${saved.count} ${unit}`} /><Row k="Pesha neto" v={fmtKg(saved.kg)} /><Row k="Vlera totale" v={<span className="text-entry">{fmtLek(saved.total)}</span>} /></div>
           <Button variant="entry" size="lg" className="mt-4 w-full" onClick={reset}>Regjistro dërgesë tjetër</Button>
         </motion.div>
       )}
@@ -276,13 +283,13 @@ const Req = () => <span className="text-danger">*</span>;
 const Hint = ({ children, className }: { children: React.ReactNode; className?: string }) => <p className={cn("mt-1 text-[11px] text-muted-foreground", className)}>{children}</p>;
 const Row = ({ k, v }: { k: string; v: React.ReactNode }) => <div className="flex items-center justify-between border-b py-2 text-sm last:border-0"><span className="text-muted-foreground">{k}</span><span className="text-right font-medium tabular">{v}</span></div>;
 
-function DualField({ label, doc, act, onDoc, onAct, diff, fmt, step, hint }: { label: string; doc: string; act: string; onDoc: (v: string) => void; onAct: (v: string) => void; diff: number; fmt: (d: number) => string; step?: string; hint?: string }) {
+function DualField({ label, doc, act, onDoc, onAct, diff, fmt, step, hint }: { label: string; doc: string; act: string; onDoc: (v: string) => void; onAct: (v: string) => void; diff: number | null; fmt: (d: number) => string; step?: string; hint?: string }) {
   return (
-    <div className="mt-4"><Label>{label} <Req /></Label>
+    <div className="mt-4"><Label>{label}{label.startsWith("Pesha") && <Req />}</Label>
       <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
-        <div><p className="mb-1 text-[10px] text-muted-foreground">Sipas dokumentit</p><Input type="number" step={step} value={doc} onChange={e => onDoc(e.target.value)} /></div>
-        <div><p className="mb-1 text-[10px] text-muted-foreground">Faktik (i shkarkuar)</p><Input type="number" step={step} value={act} onChange={e => onAct(e.target.value)} /></div>
-        <Badge variant={diff === 0 ? "entry" : "warn"} className="mb-2.5">{diff === 0 ? "përputhet" : fmt(diff)}</Badge>
+        <div><p className="mb-1 text-[10px] text-muted-foreground">Sipas dokumentit</p><Input type="number" aria-label={`${label} — dokument`} step={step} value={doc} onChange={e => onDoc(e.target.value)} /></div>
+        <div><p className="mb-1 text-[10px] text-muted-foreground">Faktik (i shkarkuar)</p><Input type="number" aria-label={`${label} — faktik`} step={step} value={act} onChange={e => onAct(e.target.value)} /></div>
+        <Badge variant={diff === 0 ? "entry" : "warn"} className="mb-2.5">{diff == null ? "pa krahasim" : diff === 0 ? "përputhet" : fmt(diff)}</Badge>
       </div>
       {hint && <Hint>{hint}</Hint>}
     </div>

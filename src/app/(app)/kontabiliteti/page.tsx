@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/shell";
 import { useServerReport } from "@/lib/use-server-report";
 import type { AccountingReport } from "@/lib/server/accounting-report";
 import type { PeriodKey } from "@/lib/accounting";
-import { cn, fmtDate, fmtKg, fmtLek, fmtNum } from "@/lib/utils";
+import { cn, fmtDate, fmtKg, fmtLek, fmtNum, fmtPercent } from "@/lib/utils";
 
 export default function Kontabiliteti() {
   const [pk, setPk] = useState<PeriodKey>("month");
@@ -26,7 +26,7 @@ export default function Kontabiliteti() {
   const maxRev = Math.max(1, ...series.map(s => s.revenue));
   const exportCsv = () => {
     const rows = [["Produkti", "Kg", "Të ardhura", "Kosto e mallit", "Fitim bruto", "Marzh %", "Çmim mes./kg", "Kosto mes./kg", "Diferenca/kg"],
-      ...prods.map(r => [r.product.name, r.kg.toFixed(2), Math.round(r.revenue), Math.round(r.cogs), Math.round(r.profit), (r.margin * 100).toFixed(1), r.avgSell.toFixed(0), r.avgCost.toFixed(0), r.spread.toFixed(0)])];
+      ...prods.map(r => [r.product.name, r.kg.toFixed(2), Math.round(r.revenue), r.cogs == null ? "" : Math.round(r.cogs), r.profit == null ? "" : Math.round(r.profit), r.margin == null ? "" : (r.margin * 100).toFixed(1), r.avgSell.toFixed(0), r.avgCost == null ? "" : r.avgCost.toFixed(0), r.spread == null ? "" : r.spread.toFixed(0)])];
     const csv = rows.map(r => r.map(x => `"${x}"`).join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }));
@@ -45,13 +45,14 @@ export default function Kontabiliteti() {
         <b>Fitim bruto, jo neto.</b> Këto shifra përfshijnë vetëm koston e mallit të shitur (kosto e lotit specifik). Shpenzimet operative — qira, paga, energji e frigoriferëve, transport i brendshëm — nuk janë në sistem ende, ndaj fitimi real është më i ulët. Gjithashtu, një shitje llogaritet e ardhur në momentin e regjistrimit, pavarësisht nëse klienti ka paguar.
       </Banner>
 
+      {report.data.missingCostShipmentCount > 0 && <Banner tone="warn" className="mb-4">Kosto të paplota. {fmtKg(cur.missingInventoryCostKg, 0)} në stok pa kosto; {fmtLek(cur.knownInventoryValue)} është vlera e pjesës me kosto të njohur. Fitimi, marzhi dhe shpenzimet që përfshijnë ngarkesa pa kosto shfaqen si —. Vendet bosh në grafikë dhe CSV tregojnë kosto të panjohur.</Banner>}
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Kpi label="Të ardhura" value={fmtLek(cur.revenue)} delta={d(cur.revenue, prev.revenue)} hidePrev={pk === "all"} />
         <Kpi label="Kosto e mallit" value={fmtLek(cur.cogs)} delta={d(cur.cogs, prev.cogs)} invert hidePrev={pk === "all"} />
         <Kpi label="Fitim bruto" value={fmtLek(cur.profit)} delta={d(cur.profit, prev.profit)} tone="entry" hidePrev={pk === "all"} />
-        <Kpi label="Marzh bruto" value={`${(cur.margin * 100).toFixed(1)}%`} sub={pk === "all" ? undefined : `${(prev.margin * 100).toFixed(1)}% më parë`} tone="entry" />
+        <Kpi label="Marzh bruto" value={fmtPercent(cur.margin)} sub={pk === "all" ? undefined : `${fmtPercent(prev.margin)} më parë`} tone="entry" />
         <Kpi label="Blerje (dalje parash)" value={fmtLek(cur.purchaseSpend)} sub={`${cur.orders} porosi shitjeje`} />
-        <Kpi label="Stok në magazinë (kosto)" value={fmtLek(cur.inventoryValue)} sub={risk.value > 0 ? `${fmtLek(risk.value)} në rrezik skadimi` : "pa rrezik skadimi"} tone={risk.value > 0 ? "warn" : undefined} />
+        <Kpi label="Stok në magazinë (kosto)" value={fmtLek(cur.inventoryValue)} sub={risk.kg > 0 ? `${fmtLek(risk.value)} në rrezik skadimi` : "pa rrezik skadimi"} tone={risk.kg > 0 ? "warn" : undefined} />
       </div>
 
       <Tabs defaultValue="ov">
@@ -70,7 +71,7 @@ export default function Kontabiliteti() {
                   <div key={s.m} className="flex flex-1 flex-col items-center gap-1" title={`${s.label}: të ardhura ${fmtLek(s.revenue)}, fitim ${fmtLek(s.profit)}`}>
                     <div className="relative flex h-36 w-full items-end justify-center">
                       <div className="w-full rounded-t-sm bg-exit/25" style={{ height: `${(s.revenue / maxRev) * 100}%` }} />
-                      <div className="absolute bottom-0 w-full rounded-t-sm bg-entry" style={{ height: `${(Math.max(0, s.profit) / maxRev) * 100}%` }} />
+                      <div className="absolute bottom-0 w-full rounded-t-sm bg-entry" style={{ height: `${(Math.max(0, s.profit ?? 0) / maxRev) * 100}%` }} />
                     </div>
                     <span className="text-[10px] text-muted-foreground">{s.label}</span>
                   </div>))}
@@ -82,28 +83,28 @@ export default function Kontabiliteti() {
             </CardContent></Card>
 
             <Card><CardHeader><CardTitle>Marzhi bruto sipas muajve</CardTitle><CardDescription>Përqindje e të ardhurave</CardDescription></CardHeader><CardContent>
-              <LineChart height={176} aLabel="Marzh bruto %" unit="%" data={series.map(s => ({ label: s.label, a: s.revenue ? +(s.margin * 100).toFixed(1) : null }))} />
+              <LineChart height={176} aLabel="Marzh bruto %" unit="%" data={series.map(s => ({ label: s.label, a: s.revenue && s.margin != null ? +(s.margin * 100).toFixed(1) : null }))} />
             </CardContent></Card>
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <Card><CardHeader><CardTitle>Kontributi në fitim</CardTitle><CardDescription>Cili produkt e sjell fitimin — {p.label}</CardDescription></CardHeader><CardContent>
-              {prods.filter(r => r.profit > 0).slice(0, 6).map(r => (
+              {prods.filter(r => r.profit != null && r.profit > 0).slice(0, 6).map(r => (
                 <div key={r.product.id} className="flex items-center gap-3 border-b py-2.5 text-sm last:border-0">
                   <span className="w-40 truncate">{r.product.name}</span>
                   <Bar value={r.profit} max={Math.max(1, prods[0]?.profit ?? 1)} tone="entry" />
                   <span className="w-28 text-right tabular">{fmtLek(r.profit)}</span>
-                  <span className="w-12 text-right text-xs text-muted-foreground tabular">{(r.profitShare * 100).toFixed(0)}%</span>
+                  <span className="w-12 text-right text-xs text-muted-foreground tabular">{fmtPercent(r.profitShare, 0)}</span>
                 </div>))}
-              {!prods.some(r => r.profit > 0) && <Empty />}
+              {!prods.some(r => r.profit != null && r.profit > 0) && <Empty />}
             </CardContent></Card>
 
             <Card><CardHeader><CardTitle>Blerje vs shitje</CardTitle><CardDescription>Paraja që del për stok, kundrejt të ardhurave</CardDescription></CardHeader><CardContent>
               <div className="flex h-44 items-end gap-2">
-                {series.map(s => { const m = Math.max(1, ...series.flatMap(x => [x.revenue, x.spend])); return (
+                {series.map(s => { const m = Math.max(1, ...series.flatMap(x => [x.revenue, x.spend ?? 0])); return (
                   <div key={s.m} className="flex flex-1 flex-col items-center gap-1" title={`${s.label}: blerje ${fmtLek(s.spend)}, shitje ${fmtLek(s.revenue)}`}>
                     <div className="flex h-36 w-full items-end justify-center gap-0.5">
-                      <div className="w-1/2 rounded-t-sm bg-warn" style={{ height: `${(s.spend / m) * 100}%` }} />
+                      <div className="w-1/2 rounded-t-sm bg-warn" style={{ height: `${((s.spend ?? 0) / m) * 100}%` }} />
                       <div className="w-1/2 rounded-t-sm bg-exit" style={{ height: `${(s.revenue / m) * 100}%` }} />
                     </div><span className="text-[10px] text-muted-foreground">{s.label}</span>
                   </div>); })}
@@ -126,15 +127,15 @@ export default function Kontabiliteti() {
               </tr></thead>
               <tbody>{prods.map(r => (
                 <tr key={r.product.id} className="border-b last:border-0 hover:bg-accent/30">
-                  <td className="px-4 py-2.5"><div className="font-medium">{r.product.name}</div><div className="text-[11px] text-muted-foreground">{(r.profitShare * 100).toFixed(0)}% e fitimit total</div></td>
+                  <td className="px-4 py-2.5"><div className="font-medium">{r.product.name}</div><div className="text-[11px] text-muted-foreground">{fmtPercent(r.profitShare, 0)} e fitimit total</div></td>
                   <Td>{fmtNum(r.kg, 1)}</Td><Td>{fmtLek(r.revenue)}</Td><Td>{fmtLek(r.cogs)}</Td>
                   <Td className="text-entry">{fmtLek(r.profit)}</Td>
-                  <Td><span className={cn(r.margin < 0.1 && r.kg > 0 && "text-warn")}>{r.kg ? (r.margin * 100).toFixed(1) + "%" : "—"}</span></Td>
+                  <Td><span className={cn(r.margin != null && r.margin < 0.1 && r.kg > 0 && "text-warn")}>{r.kg ? fmtPercent(r.margin) : "—"}</span></Td>
                   <Td>{r.kg ? fmtNum(r.avgSell) : "—"}</Td><Td className="text-muted-foreground">{r.kg ? fmtNum(r.avgCost) : "—"}</Td>
                   <Td className="text-entry">{r.kg ? fmtNum(r.spread) : "—"}</Td>
                   <Td><Delta a={r.kg} b={r.prevKg} /></Td>
                 </tr>))}</tbody>
-              {prods.length > 0 && <tfoot><tr className="border-t-2 font-medium"><td className="px-4 py-2.5">Totali</td><Td>{fmtNum(cur.kg, 1)}</Td><Td>{fmtLek(cur.revenue)}</Td><Td>{fmtLek(cur.cogs)}</Td><Td className="text-entry">{fmtLek(cur.profit)}</Td><Td>{(cur.margin * 100).toFixed(1)}%</Td><Td colSpan={4} /></tr></tfoot>}
+              {prods.length > 0 && <tfoot><tr className="border-t-2 font-medium"><td className="px-4 py-2.5">Totali</td><Td>{fmtNum(cur.kg, 1)}</Td><Td>{fmtLek(cur.revenue)}</Td><Td>{fmtLek(cur.cogs)}</Td><Td className="text-entry">{fmtLek(cur.profit)}</Td><Td>{fmtPercent(cur.margin)}</Td><Td colSpan={4} /></tr></tfoot>}
             </table></div>
             {!prods.length && <Empty />}
           </CardContent></Card>
@@ -189,18 +190,18 @@ export default function Kontabiliteti() {
                   <td className="px-4 py-2.5"><Link href={`/klientet/${r.client.id}`} className="font-medium hover:underline">{r.client.name}</Link><div className="text-[11px] text-muted-foreground">{r.client.city}</div></td>
                   <Td>{r.orders}</Td><Td>{fmtNum(r.kg, 1)}</Td><Td>{fmtLek(r.revenue)}</Td>
                   <Td className="text-entry">{fmtLek(r.profit)}</Td>
-                  <Td><span className={cn(r.margin < 0.1 && "text-warn")}>{(r.margin * 100).toFixed(1)}%</span></Td>
-                  <Td>{fmtNum(r.avgPrice)}</Td><Td className="text-muted-foreground">{(r.profitShare * 100).toFixed(0)}%</Td>
+                  <Td><span className={cn(r.margin != null && r.margin < 0.1 && "text-warn")}>{fmtPercent(r.margin)}</span></Td>
+                  <Td>{fmtNum(r.avgPrice)}</Td><Td className="text-muted-foreground">{fmtPercent(r.profitShare, 0)}</Td>
                 </tr>))}</tbody>
             </table></div>
             {!clis.length && <Empty />}
           </CardContent></Card>
-          {clis.length > 1 && <Card className="mt-4"><CardHeader><CardTitle>Përqendrimi i fitimit</CardTitle><CardDescription>Sa varet fitimi nga pak klientë</CardDescription></CardHeader><CardContent>
+          {clis.length > 1 && cur.profit != null && <Card className="mt-4"><CardHeader><CardTitle>Përqendrimi i fitimit</CardTitle><CardDescription>Sa varet fitimi nga pak klientë</CardDescription></CardHeader><CardContent>
             <div className="mb-3 flex h-7 overflow-hidden rounded-md text-[11px] font-medium">
-              {clis.slice(0, 4).map((c, i) => <div key={c.client.id} className={cn("flex items-center justify-center truncate px-2 text-white", ["bg-exit", "bg-entry", "bg-warn", "bg-danger"][i])} style={{ width: `${Math.max(4, c.profitShare * 100)}%` }} title={`${c.client.name}: ${(c.profitShare * 100).toFixed(0)}%`}>{c.client.name.split(" ")[0]}</div>)}
+              {clis.slice(0, 4).map((c, i) => <div key={c.client.id} className={cn("flex items-center justify-center truncate px-2 text-white", ["bg-exit", "bg-entry", "bg-warn", "bg-danger"][i])} style={{ width: `${Math.max(4, (c.profitShare ?? 0) * 100)}%` }} title={`${c.client.name}: ${((c.profitShare ?? 0) * 100).toFixed(0)}%`}>{c.client.name.split(" ")[0]}</div>)}
               {clis.length > 4 && <div className="flex flex-1 items-center justify-center bg-secondary text-muted-foreground">të tjerë</div>}
             </div>
-            <p className="text-xs text-muted-foreground">Dy klientët kryesorë sjellin <b>{((clis[0].profitShare + (clis[1]?.profitShare ?? 0)) * 100).toFixed(0)}%</b> të fitimit bruto në këtë periudhë.</p>
+            <p className="text-xs text-muted-foreground">Dy klientët kryesorë sjellin <b>{(((clis[0].profitShare ?? 0) + (clis[1]?.profitShare ?? 0)) * 100).toFixed(0)}%</b> të fitimit bruto në këtë periudhë.</p>
           </CardContent></Card>}
         </TabsContent>
 
@@ -213,8 +214,8 @@ export default function Kontabiliteti() {
                 <tr key={r.supplier.id} className="border-b last:border-0 hover:bg-accent/30">
                   <td className="px-4 py-2.5"><div className="font-medium">{r.supplier.name}</div><div className="text-[11px] text-muted-foreground">{r.supplier.country}</div></td>
                   <Td>{r.shipments}</Td><Td>{fmtNum(r.kgBought, 0)}</Td><Td>{fmtLek(r.spend)}</Td><Td>{r.kgBought ? fmtNum(r.avgCost) : "—"}</Td>
-                  <Td>{r.realised.kg ? <span className="text-entry">{(r.realised.margin * 100).toFixed(1)}%</span> : <span className="text-muted-foreground">—</span>}</Td>
-                  <Td>{r.shortfallKg > 0.01 ? <span className="text-warn">{fmtNum(r.shortfallKg, 1)} kg · {fmtLek(r.shortfallLek)}</span> : <span className="text-muted-foreground">—</span>}</Td>
+                  <Td>{r.realised.kg ? <span className="text-entry">{fmtPercent(r.realised.margin)}</span> : <span className="text-muted-foreground">—</span>}</Td>
+                  <Td>{r.shortfallKg != null && r.shortfallKg > 0.01 ? <span className="text-warn">{fmtNum(r.shortfallKg, 1)} kg · {fmtLek(r.shortfallLek)}</span> : <span className="text-muted-foreground">—</span>}</Td>
                 </tr>))}</tbody>
             </table></div>
             {!sups.length && <Empty />}
@@ -226,7 +227,7 @@ export default function Kontabiliteti() {
         <TabsContent value="lot">
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
             <Kpi label="Kapital në stok" value={fmtLek(cur.inventoryValue)} sub={`${activeLotCount} lote aktive`} />
-            <Kpi label="Kapital në rrezik skadimi" value={fmtLek(risk.value)} sub={`${risk.lots} lote brenda ${thresholds.expiryDays} ditëve`} tone={risk.value > 0 ? "warn" : undefined} />
+            <Kpi label="Kapital në rrezik skadimi" value={fmtLek(risk.value)} sub={`${risk.lots} lote brenda ${thresholds.expiryDays} ditëve`} tone={risk.kg > 0 ? "warn" : undefined} />
             <Kpi label="Fitim i realizuar (gjithçka)" value={fmtLek(realizedProfit)} sub="nga lotet e shitura deri tani" tone="entry" />
           </div>
           <Card><CardHeader><CardTitle>Pasqyra e loteve</CardTitle><CardDescription>Çdo blerje si njësi më vete — a doli e mirë?</CardDescription></CardHeader><CardContent className="px-0">
@@ -239,8 +240,8 @@ export default function Kontabiliteti() {
                   <Td>{fmtLek(l.invested)}</Td>
                   <Td><div>{(l.pctSold * 100).toFixed(0)}%</div><div className="text-[11px] text-muted-foreground">{fmtNum(l.soldKg, 0)} kg</div></Td>
                   <Td>{fmtLek(l.revenue)}</Td>
-                  <Td className={l.realised > 0 ? "text-entry" : "text-muted-foreground"}>{l.soldKg ? fmtLek(l.realised) : "—"}</Td>
-                  <Td>{l.soldKg ? (l.margin * 100).toFixed(1) + "%" : "—"}</Td>
+                  <Td className={l.realised != null && l.realised > 0 ? "text-entry" : "text-muted-foreground"}>{l.soldKg ? fmtLek(l.realised) : "—"}</Td>
+                  <Td>{l.soldKg ? fmtPercent(l.margin) : "—"}</Td>
                   <Td>{l.remainKg > 0 ? fmtLek(l.remainValue) : <span className="text-muted-foreground">shitur</span>}</Td>
                   <Td>{l.remainKg > 0 ? <span className={cn(l.expDays <= thresholds.expiryDays && "text-warn")}>{l.daysHeld}d{l.expDays <= thresholds.expiryDays ? ` · skadon ${l.expDays}d` : ""}</span> : <span className="text-muted-foreground">—</span>}</Td>
                 </tr>))}</tbody>
@@ -253,7 +254,7 @@ export default function Kontabiliteti() {
   );
 }
 
-const d = (a: number, b: number) => (b ? (a - b) / b : a ? 1 : 0);
+const d = (a: number | null, b: number | null) => a == null || b == null ? undefined : (b ? (a - b) / b : a ? 1 : 0);
 function Kpi({ label, value, sub, delta, tone, invert, hidePrev }: { label: string; value: string; sub?: React.ReactNode; delta?: number; tone?: "entry" | "warn"; invert?: boolean; hidePrev?: boolean }) {
   const good = delta === undefined ? true : invert ? delta <= 0 : delta >= 0;
   return (
