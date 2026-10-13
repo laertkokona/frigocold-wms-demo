@@ -11,7 +11,8 @@ interface State extends Data {
   addSupplier: (s: Omit<Supplier, "id">) => Promise<Supplier>;
   addClient: (c: Omit<Client, "id">) => Promise<Client>;
   updateProduct: (id: string, patch: { name: string }) => Promise<void>;
-  updateShipmentDetails: (id: string, patch: Pick<Shipment, "supplierId" | "orderNr" | "costPerKg">) => Promise<void>;
+  updateShipmentDetails: (id: string, patch: Pick<Shipment, "supplierId" | "orderNr" | "costPerKg"> & { entryDate?: string }) => Promise<void>;
+  cancelShipment: (id: string) => Promise<void>;
   updateClient: (id: string, patch: Partial<Omit<Client, "id">>) => Promise<void>;
   updateSupplier: (id: string, patch: Partial<Omit<Supplier, "id">>) => Promise<void>;
   addShipment: (s: Omit<Shipment, "id" | "soldKg" | "soldCount"> & { entryDate?: string; draftId?: string; requestId: string }) => Promise<Shipment>;
@@ -46,6 +47,7 @@ export const useStore = create<State>()((set) => {
     addClient: data => command<Client>("addClient", data),
     updateProduct: async (id, data) => { await command("updateProduct", data, id); },
     updateShipmentDetails: async (id, data) => { await command("updateShipmentDetails", data, id); },
+    cancelShipment: async id => { await command("cancelShipment", undefined, id); },
     updateClient: async (id, data) => { await command("updateClient", data, id); },
     updateSupplier: async (id, data) => { await command("updateSupplier", data, id); },
     addShipment: ({ requestId, ...data }) => command<Shipment>("addShipment", data, undefined, requestId),

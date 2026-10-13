@@ -42,7 +42,7 @@ export default function Dashboard() {
             <Card><CardHeader><CardTitle>Lëvizësit kryesorë</CardTitle><CardDescription>Këtë muaj</CardDescription></CardHeader><CardContent className="text-sm">
               <Mover icon={Crown} label="Klienti kryesor" sub={cs[0]?.client.name ?? "—"} val={fmtLek(cs[0]?.valCur ?? 0)} />
               <Mover icon={TrendingUp} label="Produkti më fitimprurës" sub={report.data.profitRankingIncomplete ? "Kosto të paplota" : mostProfitable?.product.name ?? "—"} val={report.data.profitRankingIncomplete ? "—" : fmtLek(mostProfitable?.profit ?? 0)} />
-              <Mover icon={Zap} label="Lëvizja më e shpejtë" sub={`${fastest?.product.name ?? "—"} · ${fastest?.days ?? "—"} ditë në stok`} val="i shpejtë" /><Mover icon={Zap} label="Lëvizja më e ngadaltë" sub={`${slowest?.product.name ?? "—"} · ${slowest?.days ?? "—"} ditë në stok`} val={<span className="text-warn">i ngadaltë</span>} />
+              <Mover icon={Zap} label="Lëvizja më e shpejtë" sub={`${fastest?.product.name ?? "—"} · ${stockDays(fastest?.days)}`} val="i shpejtë" /><Mover icon={Zap} label="Lëvizja më e ngadaltë" sub={`${slowest?.product.name ?? "—"} · ${stockDays(slowest?.days)}`} val={<span className="text-warn">i ngadaltë</span>} />
             </CardContent></Card>
           </div>
           <Card className="mt-4"><CardHeader><CardTitle>Çfarë kërkon vëmendje</CardTitle><CardDescription>Përfundime automatike nga të dhënat</CardDescription></CardHeader><CardContent className="space-y-2">
@@ -64,7 +64,7 @@ export default function Dashboard() {
               {turnover.map(({ product, days }) => { const d = days; const w = d === null ? 0 : Math.min(100, d / 2); return <div key={product.id} className="flex items-center gap-3 text-sm"><span className="w-40 truncate">{product.name}</span><div className="h-4 flex-1 overflow-hidden rounded bg-secondary"><div className={cn("flex h-full items-center pl-2 text-[10px] font-medium text-white", d === null ? "bg-border" : d < 30 ? "bg-entry" : d < 90 ? "bg-warn" : "bg-danger")} style={{ width: `${Math.max(w, 12)}%` }}>{d === null ? "pa shitje" : `${d}d`}</div></div></div>; })}
             </CardContent></Card>
             <Card><CardHeader><CardTitle>Rreziku i skadimit sipas lotit</CardTitle><CardDescription>Renditur nga më urgjenti</CardDescription></CardHeader><CardContent>
-              {expiring.map(s => { const d = daysUntil(s.expFrom); return <Link href={`/inventari/${s.id}`} key={s.id} className="flex items-center justify-between border-b py-2.5 text-sm last:border-0 hover:bg-accent/40"><div><div className="font-medium">Lot {s.lot} · {s.product} <Badge variant={d < 60 ? "danger" : d < 180 ? "warn" : "entry"} className="ml-1">{d < 0 ? "skaduar" : `${d} ditë`}</Badge></div><div className="text-xs text-muted-foreground">{s.supplier} · {s.remainingCount == null ? "sasi e panjohur" : `${s.remainingCount} ${s.loadType === "PALLET" ? "paleta" : "kartona"}`}</div></div><span className="tabular">{fmtKg(s.remainingKg, 0)}</span></Link>; })}
+              {expiring.map(s => { const d = daysUntil(s.expFrom); return <Link href={`/inventari/${s.id}`} key={s.id} className="flex items-center justify-between border-b py-2.5 text-sm last:border-0 hover:bg-accent/40"><div><div className="font-medium">{s.lot} · {s.product} <Badge variant={d < 60 ? "danger" : d < 180 ? "warn" : "entry"} className="ml-1">{d < 0 ? "skaduar" : `${d} ditë`}</Badge></div><div className="text-xs text-muted-foreground">{s.supplier} · {s.remainingCount == null ? "sasi e panjohur" : `${s.remainingCount} ${s.loadType === "PALLET" ? "paleta" : "kartona"}`}</div></div><span className="tabular">{fmtKg(s.remainingKg, 0)}</span></Link>; })}
             </CardContent></Card>
           </div>
           <Card className="mt-4"><CardHeader><CardTitle>Stoku sipas produktit</CardTitle><CardDescription>Kg dhe vlera me kosto</CardDescription></CardHeader><CardContent className="space-y-2">
@@ -119,3 +119,6 @@ function Mover({ icon: Icon, label, sub, val }: { icon: React.ElementType; label
   return <div className="flex items-center gap-3 border-b py-2.5 last:border-0"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Icon className="h-3.5 w-3.5" /></span><div className="flex-1"><div className="font-medium">{label}</div><div className="text-xs text-muted-foreground">{sub}</div></div><span className="tabular">{val}</span></div>;
 }
 function KV({ k, v }: { k: string; v: React.ReactNode }) { return <div className="min-w-28"><div className="text-[10px] text-muted-foreground">{k}</div><div className="font-medium tabular">{v}</div></div>; }
+
+/** "12 ditë në stok"; a year or more (little sales history) is shown as "mbi 1 vit në stok". */
+const stockDays = (d: number | null | undefined) => d == null ? "—" : d > 365 ? "mbi 1 vit në stok" : `${d} ditë në stok`;

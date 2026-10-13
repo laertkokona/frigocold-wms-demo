@@ -38,7 +38,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
           SUM(COALESCE(b.kg, 0)) AS stock, MAX(sh.entry_date) AS last
         FROM shipments sh LEFT JOIN (
           SELECT shipment_id, SUM(kg) AS kg FROM movements GROUP BY shipment_id
-        ) b ON b.shipment_id = sh.id GROUP BY sh.supplier_id
+        ) b ON b.shipment_id = sh.id WHERE sh.cancelled_at IS NULL GROUP BY sh.supplier_id
       ) t ON t.supplier_id = s.id
       WHERE s.name ILIKE ${match} OR s.country ILIKE ${match} OR COALESCE(s.contact, '') ILIKE ${match}
     `;
@@ -54,7 +54,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
       LEFT JOIN suppliers su ON su.id = sh.supplier_id
       LEFT JOIN (SELECT shipment_id, SUM(kg) AS kg, SUM(qty) AS qty FROM movements GROUP BY shipment_id) b ON b.shipment_id = sh.id
       LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
-      WHERE COALESCE(b.kg, 0) > 0 AND (
+      WHERE COALESCE(b.kg, 0) > 0 AND sh.cancelled_at IS NULL AND (
         p.name ILIKE ${match} OR su.name ILIKE ${match} OR sh.order_nr ILIKE ${match}
         OR sh.origin ILIKE ${match} OR sh.specs ILIKE ${match}
         OR sh.entry_date ILIKE ${dateMatch} OR EXISTS (
@@ -71,6 +71,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         FROM shipments sh JOIN products p ON p.id = sh.product_id
         LEFT JOIN suppliers su ON su.id = sh.supplier_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
+        WHERE sh.cancelled_at IS NULL
         UNION ALL
         SELECT sl.id, sa.date, 'OUT'::text, p.name, COALESCE(l.lots, ''), c.name,
           sl.qty, sl.kg, sl.kg * sl.price_per_kg,
@@ -90,10 +91,10 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         FROM shipments sh JOIN products p ON p.id = sh.product_id LEFT JOIN suppliers su ON su.id = sh.supplier_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         LEFT JOIN (SELECT shipment_id, SUM(kg) AS kg FROM movements GROUP BY shipment_id) b ON b.shipment_id = sh.id
-        WHERE sh.order_nr ILIKE ${match} OR p.name ILIKE ${match} OR su.name ILIKE ${match}
+        WHERE sh.cancelled_at IS NULL AND (sh.order_nr ILIKE ${match} OR p.name ILIKE ${match} OR su.name ILIKE ${match}
           OR sh.entry_date ILIKE ${dateMatch} OR EXISTS (
             SELECT 1 FROM shipment_lots fl WHERE fl.shipment_id = sh.id AND fl.lot_number ILIKE ${match}
-          )
+          ))
         UNION ALL
         SELECT p.id, 'prod'::text, p.name, COALESCE(p.origin, ''), COALESCE(SUM(b.kg), 0), NULL::varchar(10)
         FROM products p LEFT JOIN shipments sh ON sh.product_id = p.id

@@ -41,6 +41,8 @@ async function main() {
     const known = await receive({ productId: product.id, supplierId: supplier.id, orderNr: "A", loadType: "CARTON", countDoc: 10, countActual: 10, netKgDoc: 100, netKgActual: 100, costPerKg: 2, lots: [{ lotNumber: "L", qty: 10 }], dateMode: "FIXED", prodFrom: "", expFrom: "2027-01-01", entryDate: today });
     const original = await db.movement.findFirstOrThrow({ where: { shipmentId: String(known.id) } });
     await admin.query(await readFile("prisma/migrations/20261012000000_incomplete_shipments/migration.sql", "utf8"));
+    // Later migrations are idempotent; re-apply them so their constraints sit on top of the upgrade under test.
+    for (const name of migrations.filter(name => name > "20261012000000_incomplete_shipments")) await admin.query(await readFile(`prisma/migrations/${name}/migration.sql`, "utf8"));
     assert.deepEqual(await db.movement.findUnique({ where: { id: original.id } }), original);
     const unknown = await receive({ productId: product.id, netKgActual: 100, expFrom: "2027-01-01", entryDate: today });
     const shipmentId = String(unknown.id), knownId = String(known.id);
@@ -84,6 +86,22 @@ async function main() {
     const races = await Promise.allSettled([sell(shipmentId, 50, null), sell(shipmentId, 50, null)]);
     assert.equal(races.filter(result => result.status === "fulfilled").length, 1);
     assert.equal(races.filter(result => result.status === "rejected").length, 1);
+    // A load saved twice by mistake can be cancelled while unsold; its ledger rows are kept and its stock leaves every view.
+    const dupId = String((await receive({ productId: product.id, netKgActual: 40, expFrom: "2027-01-01", entryDate: today })).id);
+    const kgBefore = (await getDashboard()).totalKg;
+    await executeCommand(commandSchema.parse({ type: "cancelShipment", id: dupId }), user.id);
+    assert.equal((await getDashboard()).totalKg, kgBefore - 40);
+    assert.ok(!(await getState()).shipments.some(s => s.id === dupId));
+    assert.equal(await db.movement.count({ where: { shipmentId: dupId } }), 2);
+    await assert.rejects(executeCommand(commandSchema.parse({ type: "cancelShipment", id: dupId }), user.id), /already cancelled/);
+    await assert.rejects(sell(dupId, 1, null), /cancelled|Insufficient/);
+    await assert.rejects(executeCommand(commandSchema.parse({ type: "cancelShipment", id: shipmentId }), user.id), /with sales/);
+    // Entry date can be corrected back in time, but not into the future or after a sale from the load.
+    const earlier = new Date(today); earlier.setDate(earlier.getDate() - 3);
+    const earlierIso = earlier.toISOString().slice(0, 10);
+    await executeCommand(commandSchema.parse({ type: "updateShipmentDetails", id: shipmentId, data: { entryDate: earlierIso } }), user.id);
+    assert.equal((await getState()).shipments.find(s => s.id === shipmentId)?.entryDate, earlierIso);
+    await assert.rejects(executeCommand(commandSchema.parse({ type: "updateShipmentDetails", id: shipmentId, data: { entryDate: "2999-01-01" } }), user.id), /future/);
     console.log("Integration passed: migration preservation, incomplete receiving, kg-only sales, unit/kg overdraw protection, idempotency, browsing, missing-cost reporting, enrichment, immutable ledger and concurrent sales.");
   } finally {
     shared.frigocoldDb = previous;

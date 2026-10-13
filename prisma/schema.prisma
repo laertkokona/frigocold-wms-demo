@@ -80,6 +80,8 @@ model Shipment {
   expFrom     String    @map("exp_from") @db.VarChar(10)
   expTo       String?   @map("exp_to") @db.VarChar(10)
   entryDate   String    @map("entry_date") @db.VarChar(10)
+  /// Set when a load entered by mistake is cancelled; a CANCEL movement reverses its stock.
+  cancelledAt DateTime? @map("cancelled_at")
   fixedKg     Decimal?  @map("fixed_kg") @db.Decimal(10, 3)
   origin      String?   @db.VarChar(100)
   specs       String?   @db.VarChar(200)

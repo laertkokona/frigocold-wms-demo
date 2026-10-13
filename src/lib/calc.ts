@@ -1,6 +1,6 @@
 import type { Client, Product, Sale, Shipment, Thresholds } from "./types";
 import { daysUntil, todayInTirane } from "./utils";
-import { remainingCount, remainingKg } from "./stock";
+import { remainingCount, remainingKg, shipmentLabel } from "./stock";
 import { econOf } from "./accounting";
 import { inventoryCosts, sumCosts } from "./costs";
 
@@ -12,10 +12,10 @@ export function computeAlerts(shipments: Shipment[], products: Product[], t: Thr
   for (const s of shipments) {
     const rem = remainingKg(s); if (rem <= 0) continue;
     const d = daysUntil(s.expFrom);
-    if (d <= t.expiryDays) out.push({ level: d <= 30 ? "danger" : "warn", title: `Lot ${s.lots[0]?.lotNumber} · ${pname(s.productId)} — ${d <= 0 ? "ka skaduar" : `skadon për ${d} ditë`}`, detail: `${rem.toFixed(1)} kg mbeten — shit i pari`, href: `/inventari/${s.id}` });
+    if (d <= t.expiryDays) out.push({ level: d <= 30 ? "danger" : "warn", title: `${shipmentLabel(s)} · ${pname(s.productId)} — ${d <= 0 ? "ka skaduar" : `skadon për ${d} ditë`}`, detail: `${rem.toFixed(1)} kg mbeten — shit i pari`, href: `/inventari/${s.id}` });
     const count = remainingCount(s);
     if (s.loadType === "CARTON" && count != null && count > 0 && count <= t.lowShipmentCount)
-      out.push({ level: "warn", title: `Lot ${s.lots[0]?.lotNumber} · ${pname(s.productId)} — sasi e ulët e lotit`, detail: `Vetëm ${remainingCount(s)} kartona mbeten nga ky lot`, href: `/inventari/${s.id}` });
+      out.push({ level: "warn", title: `${shipmentLabel(s)} · ${pname(s.productId)} — sasi e ulët e lotit`, detail: `Vetëm ${remainingCount(s)} kartona mbeten nga ky lot`, href: `/inventari/${s.id}` });
   }
   for (const p of products) {
     const min = t.lowProductKg[p.id]; if (!min) continue;
@@ -83,9 +83,13 @@ export function productProfit(products: Product[], shipments: Shipment[], sales:
 export function daysOnHand(p: Product, shipments: Shipment[], sales: Sale[]) {
   const sh = shipments.filter(s => s.productId === p.id);
   const stock = sh.reduce((a, s) => a + remainingKg(s), 0);
-  const since = new Date(todayInTirane()); since.setDate(since.getDate() - 90);
-  const out90 = sales.filter(s => new Date(s.date) >= since).flatMap(s => s.lines).filter(l => l.productId === p.id).reduce((a, l) => a + l.kg, 0);
-  const perDay = out90 / 90;
+  // Sales rate over the last 90 days, or over the days since this product's first load if that is shorter,
+  // so a short history (e.g. right after go-live) is not averaged over 90 days.
+  const today = new Date(todayInTirane()), first = sh.reduce((m, s) => (s.entryDate < m ? s.entryDate : m), todayInTirane());
+  const windowDays = Math.min(90, Math.max(1, Math.round((today.getTime() - new Date(first).getTime()) / 86400000) + 1));
+  const since = new Date(today); since.setDate(since.getDate() - windowDays + 1);
+  const outKg = sales.filter(s => new Date(s.date) >= since).flatMap(s => s.lines).filter(l => l.productId === p.id).reduce((a, l) => a + l.kg, 0);
+  const perDay = outKg / windowDays;
   return perDay > 0 ? Math.round(stock / perDay) : null;
 }
 

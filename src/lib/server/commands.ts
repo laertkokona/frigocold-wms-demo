@@ -39,7 +39,9 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("addShipment"), data: shipment }),
   z.object({ type: z.literal("updateShipmentDetails"), id, data: z.object({
     supplierId: id.nullable().optional(), orderNr: z.string().trim().min(1).max(100).nullable().optional(), costPerKg: positive.nullable().optional(),
+    entryDate: date.optional(),
   }).strict().refine(data => Object.keys(data).length > 0, "No editable details supplied") }),
+  z.object({ type: z.literal("cancelShipment"), id }),
   z.object({ type: z.literal("saveDraft"), data: z.object({ id: id.optional(), productId: id, data: z.record(z.string(), z.unknown()) }) }),
   z.object({ type: z.literal("deleteDraft"), id }),
   z.object({ type: z.literal("finalizeSale"), data: z.object({ clientId: id, lines: z.array(line).min(1), date: date.optional() }) }),
@@ -109,8 +111,34 @@ export async function executeCommand(command: Command, userId: string, requestId
       return { id: row.id };
     }
     case "updateShipmentDetails": {
-      const row = await db.shipment.update({ where: { id: command.id }, data: command.data });
+      const { entryDate } = command.data;
+      const row = await db.$transaction(async tx => {
+        if (entryDate) {
+          // A corrected entry date must not be in the future, nor later than a sale already made from this load.
+          const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Tirane" });
+          if (entryDate > today) throw new DomainError("Entry date cannot be in the future");
+          const firstSale = await tx.sale.findFirst({ where: { lines: { some: { shipmentId: command.id } } }, orderBy: { date: "asc" }, select: { date: true } });
+          if (firstSale && entryDate > firstSale.date) throw new DomainError("Entry date cannot be after a sale from this load");
+        }
+        if ((await tx.shipment.findUnique({ where: { id: command.id }, select: { cancelledAt: true } }))?.cancelledAt) throw new DomainError("Shipment is cancelled");
+        return tx.shipment.update({ where: { id: command.id }, data: command.data });
+      });
       return { id: row.id };
+    }
+    case "cancelShipment": {
+      // Cancels a load entered by mistake (e.g. saved twice), only while nothing has been sold from it.
+      // The ledger stays append-only: a CANCEL movement reverses the IN movement and the load is marked
+      // cancelled, so it leaves stock and reports while its original rows are kept.
+      await db.$transaction(async tx => {
+        const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM shipments WHERE id = ${command.id}::uuid FOR UPDATE`;
+        if (!locked.length) throw new DomainError("Shipment not found");
+        const s = await tx.shipment.findUniqueOrThrow({ where: { id: command.id }, select: { cancelledAt: true, netKgActual: true, countActual: true } });
+        if (s.cancelledAt) throw new DomainError("Shipment is already cancelled");
+        if (await tx.saleLine.count({ where: { shipmentId: command.id } })) throw new DomainError("A load with sales cannot be cancelled");
+        await tx.movement.create({ data: { shipmentId: command.id, userId, type: "CANCEL", kg: s.netKgActual.negated(), qty: s.countActual == null ? null : -s.countActual } });
+        await tx.shipment.update({ where: { id: command.id }, data: { cancelledAt: new Date() } });
+      });
+      return { id: command.id };
     }
     case "saveDraft": {
       const d = command.data;
@@ -133,8 +161,9 @@ export async function executeCommand(command: Command, userId: string, requestId
         if (!(await tx.client.findUnique({ where: { id: clientId }, select: { id: true } }))) throw new DomainError("Client not found");
         // The row locks serialize concurrent sales against the same shipments.
         for (const shipmentId of ids) await tx.$queryRaw`SELECT id FROM shipments WHERE id = ${shipmentId}::uuid FOR UPDATE`;
-        const shipments = await tx.shipment.findMany({ where: { id: { in: ids } }, select: { id: true, productId: true, countActual: true, netKgActual: true, entryDate: true } });
+        const shipments = await tx.shipment.findMany({ where: { id: { in: ids } }, select: { id: true, productId: true, countActual: true, netKgActual: true, entryDate: true, cancelledAt: true } });
         if (shipments.length !== ids.length) throw new DomainError("Shipment not found");
+        if (shipments.some(s => s.cancelledAt)) throw new DomainError("Cannot sell from a cancelled load");
         const byId = new Map(shipments.map(s => [s.id, s]));
         for (const l of lines) if (byId.get(l.shipmentId)?.productId !== l.productId) throw new DomainError("Product does not match shipment");
         for (const l of lines) if (byId.get(l.shipmentId)?.countActual == null && l.method !== "TOTAL") throw new StockError("Stock without a unit count must be sold by total kilograms");

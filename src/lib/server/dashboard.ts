@@ -1,6 +1,6 @@
 import { clientStats, computeAlerts, daysOnHand, flows, lastMonths, productProfit, stockByProduct, monthKey } from "@/lib/calc";
 import { daysUntil } from "@/lib/utils";
-import { remainingCount, remainingKg } from "@/lib/stock";
+import { remainingCount, remainingKg, shipmentLabel } from "@/lib/stock";
 import { getState } from "./state";
 import { econOf } from "@/lib/accounting";
 import { inventoryCosts, sumCosts } from "@/lib/costs";
@@ -24,7 +24,7 @@ export function buildDashboard({ shipments, products, sales, clients, suppliers,
   const allTurnover = products.map(p => ({ product: p, days: daysOnHand(p, shipments, sales) }));
   const sortedTurnover = allTurnover.filter(x => x.days !== null).sort((a, b) => a.days! - b.days!);
   const expiring = [...shipments].filter(s => remainingKg(s) > 0).sort((a, b) => a.expFrom.localeCompare(b.expFrom)).slice(0, 6).map(s => ({
-    id: s.id, lot: s.lots[0]?.lotNumber ?? "", product: products.find(p => p.id === s.productId)?.name ?? "", supplier: suppliers.find(x => x.id === s.supplierId)?.name ?? "",
+    id: s.id, lot: shipmentLabel(s), product: products.find(p => p.id === s.productId)?.name ?? "", supplier: suppliers.find(x => x.id === s.supplierId)?.name ?? "",
     expFrom: s.expFrom, loadType: s.loadType, remainingCount: remainingCount(s), remainingKg: remainingKg(s),
   }));
   const supplierPerformance = suppliers.flatMap(sp => {

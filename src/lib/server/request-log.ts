@@ -3,7 +3,7 @@ import { unstable_rethrow } from "next/navigation";
 
 const actions = ["login", "logout", "command", "dashboard", "accounting", "browse", "state", "nav",
   "addProduct", "updateProduct", "addSupplier", "updateSupplier", "addClient", "updateClient",
-  "addShipment", "updateShipmentDetails", "saveDraft", "deleteDraft", "finalizeSale", "setThresholds"] as const;
+  "addShipment", "updateShipmentDetails", "cancelShipment", "saveDraft", "deleteDraft", "finalizeSale", "setThresholds"] as const;
 type Action = typeof actions[number];
 const reasons = ["authentication_required", "validation_failed", "missing_operation_id", "invalid_credentials",
   "login_rate_limited", "stock_conflict", "domain_conflict", "duplicate_record", "related_record_unavailable",

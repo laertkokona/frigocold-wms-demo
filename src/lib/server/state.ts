@@ -10,7 +10,7 @@ export async function getState(): Promise<{ products: Product[]; suppliers: Supp
     db.product.findMany({ orderBy: { name: "asc" } }),
     db.supplier.findMany({ orderBy: { name: "asc" } }),
     db.client.findMany({ orderBy: { name: "asc" } }),
-    db.shipment.findMany({ include: { lots: true }, orderBy: { createdAt: "asc" } }),
+    db.shipment.findMany({ where: { cancelledAt: null }, include: { lots: true }, orderBy: { createdAt: "asc" } }),
     db.draft.findMany({ orderBy: { savedAt: "desc" } }),
     db.sale.findMany({ include: { lines: { include: { shipment: { select: { productId: true } } } } }, orderBy: { createdAt: "asc" } }),
     db.movement.groupBy({ by: ["shipmentId", "type"], _sum: { kg: true, qty: true } }),
