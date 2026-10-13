@@ -44,7 +44,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
     `;
     case "inventory": return Prisma.sql`
       SELECT sh.id, sh.product_id AS "productId", p.name AS product,
-        sh.supplier_id AS "supplierId", su.name AS supplier, sh.order_nr AS "orderNr",
+        sh.supplier_id AS "supplierId", su.name AS supplier, sh.order_nr AS "orderNr", (sh.return_of_line_id IS NOT NULL) AS "isReturn",
         sh.load_type AS "loadType", sh.count_actual AS "countActual",
         sh.net_kg_actual AS "netKgActual", sh.cost_per_kg AS "costPerKg",
         sh.entry_date, sh.exp_from AS expiry,
@@ -64,12 +64,14 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
     `;
     case "movements": return Prisma.sql`
       SELECT * FROM (
-        SELECT sh.id, sh.entry_date AS date, 'IN'::text AS type, p.name AS product,
-          COALESCE(l.lots, '') AS lot, su.name AS party, sh.count_actual AS qty,
+        SELECT sh.id, sh.entry_date AS date, CASE WHEN sh.return_of_line_id IS NULL THEN 'IN' ELSE 'RET' END AS type, p.name AS product,
+          COALESCE(l.lots, '') AS lot, COALESCE(rc.name, su.name) AS party, sh.count_actual AS qty,
           sh.net_kg_actual AS kg, sh.net_kg_actual * sh.cost_per_kg AS value,
-          CASE WHEN sh.order_nr IS NULL THEN 'Pa nr. porosie' ELSE CONCAT('Porosia ', sh.order_nr) END AS method
+          CASE WHEN sh.return_of_line_id IS NOT NULL THEN CONCAT('kthim: ', sh.return_reason)
+            WHEN sh.order_nr IS NULL THEN 'Pa nr. porosie' ELSE CONCAT('Porosia ', sh.order_nr) END AS method
         FROM shipments sh JOIN products p ON p.id = sh.product_id
         LEFT JOIN suppliers su ON su.id = sh.supplier_id
+        LEFT JOIN sale_lines rl ON rl.id = sh.return_of_line_id LEFT JOIN sales rs ON rs.id = rl.sale_id LEFT JOIN clients rc ON rc.id = rs.client_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         WHERE sh.cancelled_at IS NULL
         UNION ALL
@@ -80,7 +82,16 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         JOIN shipments sh ON sh.id = sl.shipment_id JOIN products p ON p.id = sh.product_id
         JOIN clients c ON c.id = sa.client_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
-      ) m WHERE (${p.filter === "IN" || p.filter === "OUT" ? p.filter : "ALL"} = 'ALL' OR m.type = ${p.filter === "IN" || p.filter === "OUT" ? p.filter : "ALL"})
+        UNION ALL
+        SELECT a.id, a.date, 'ADJ'::text, p.name, COALESCE(l.lots, ''), NULL::varchar,
+          a.qty, a.kg, a.kg * sh.cost_per_kg,
+          CONCAT('mungesë: ', CASE a.reason WHEN 'SUPPLIER' THEN 'furnizuesi ngarkoi më pak' WHEN 'COUNT' THEN 'gabim në numërim'
+            WHEN 'UNRECORDED_SALE' THEN 'shitje e paregjistruar' WHEN 'DAMAGED' THEN 'i dëmtuar / i prishur' ELSE 'tjetër' END,
+            CASE WHEN a.note IS NULL THEN '' ELSE CONCAT(' — ', a.note) END)
+        FROM stock_adjustments a JOIN shipments sh ON sh.id = a.shipment_id JOIN products p ON p.id = sh.product_id
+        LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
+        WHERE sh.cancelled_at IS NULL
+      ) m WHERE (${["IN", "OUT", "RET", "ADJ"].includes(p.filter) ? p.filter : "ALL"} = 'ALL' OR m.type = ${["IN", "OUT", "RET", "ADJ"].includes(p.filter) ? p.filter : "ALL"})
         AND (m.product ILIKE ${match} OR m.lot ILIKE ${match} OR m.party ILIKE ${match} OR m.method ILIKE ${match})
     `;
     case "search": return Prisma.sql`

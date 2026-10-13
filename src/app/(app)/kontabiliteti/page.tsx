@@ -46,12 +46,14 @@ export default function Kontabiliteti() {
       </Banner>
 
       {report.data.missingCostShipmentCount > 0 && <Banner tone="warn" className="mb-4">Kosto të paplota. {fmtKg(cur.missingInventoryCostKg, 0)} në stok pa kosto; {fmtLek(cur.knownInventoryValue)} është vlera e pjesës me kosto të njohur. Fitimi, marzhi dhe shpenzimet që përfshijnë ngarkesa pa kosto shfaqen si —. Vendet bosh në grafikë dhe CSV tregojnë kosto të panjohur.</Banner>}
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Të ardhura" value={fmtLek(cur.revenue)} delta={d(cur.revenue, prev.revenue)} hidePrev={pk === "all"} />
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Kpi label="Të ardhura" value={fmtLek(cur.revenue)} delta={d(cur.revenue, prev.revenue)} hidePrev={pk === "all"} sub={cur.returnsKg > 0 ? `pas kthimeve: −${fmtLek(cur.returnsValue)} (${fmtKg(cur.returnsKg, 1)})` : undefined} />
         <Kpi label="Kosto e mallit" value={fmtLek(cur.cogs)} delta={d(cur.cogs, prev.cogs)} invert hidePrev={pk === "all"} />
         <Kpi label="Fitim bruto" value={fmtLek(cur.profit)} delta={d(cur.profit, prev.profit)} tone="entry" hidePrev={pk === "all"} />
         <Kpi label="Marzh bruto" value={fmtPercent(cur.margin)} sub={pk === "all" ? undefined : `${fmtPercent(prev.margin)} më parë`} tone="entry" />
         <Kpi label="Blerje (dalje parash)" value={fmtLek(cur.purchaseSpend)} sub={`${cur.orders} porosi shitjeje`} />
+        <Kpi label="Mungesa (humbje stoku)" value={cur.losses.kg > 0 ? fmtLek(cur.losses.value ?? cur.losses.knownValue) : fmtLek(0)} sub={cur.losses.kg > 0 ? `${fmtKg(cur.losses.kg, 1)} · ${cur.losses.count} regjistrime${cur.losses.missingCostKg > 0 ? ` · ${fmtKg(cur.losses.missingCostKg, 0)} pa kosto` : ""}` : "asnjë mungesë"} tone={cur.losses.kg > 0 ? "warn" : undefined} />
+        <Kpi label="Fitim pas mungesave" value={cur.profit == null || cur.losses.value == null ? fmtLek(null) : fmtLek(cur.profit - cur.losses.value)} sub="fitim bruto − vlera e mungesave" tone="entry" />
         <Kpi label="Stok në magazinë (kosto)" value={fmtLek(cur.inventoryValue)} sub={risk.kg > 0 ? `${fmtLek(risk.value)} në rrezik skadimi` : "pa rrezik skadimi"} tone={risk.kg > 0 ? "warn" : undefined} />
       </div>
 
@@ -265,7 +267,8 @@ function Kpi({ label, value, sub, delta, tone, invert, hidePrev }: { label: stri
         <div className={cn("mt-1 flex items-center gap-0.5 text-[11px]", good ? "text-entry" : "text-danger")}>
           {delta >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}{Math.abs(delta * 100).toFixed(0)}%
         </div>
-      ) : sub ? <div className="mt-1 text-[11px] text-muted-foreground">{sub}</div> : null}
+      ) : null}
+      {sub ? <div className="mt-1 text-[11px] text-muted-foreground">{sub}</div> : null}
     </div>
   );
 }

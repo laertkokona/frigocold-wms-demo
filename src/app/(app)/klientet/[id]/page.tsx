@@ -11,6 +11,7 @@ import { costOf } from "@/lib/accounting";
 import { sumCosts } from "@/lib/costs";
 import { useStore } from "@/lib/store";
 import { fmtDate, fmtKg, fmtLek, fmtNum } from "@/lib/utils";
+import { shipmentLabel } from "@/lib/stock";
 
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
@@ -25,9 +26,9 @@ export default function ClientDetail() {
     <>
       <PageHeader title={c.name} sub={`${c.city}${c.contact ? ` · ${c.contact}` : ""}${c.phone ? ` · ${c.phone}` : ""}`} right={<div className="flex gap-2"><Button variant="outline" onClick={() => setEdit(true)}><Pencil /> Ndrysho</Button><Button asChild variant="ghost"><Link href="/klientet"><ArrowLeft /> Klientët</Link></Button></div>} />
       <ClientDialog open={edit} client={c} onClose={() => setEdit(false)} />
-      <div className="mb-4 grid gap-3 sm:grid-cols-4">{[["Porosi", String(mine.length)], ["Kg gjithsej", fmtKg(kg, 0)], ["Të ardhura", fmtLek(total)], ["Fitim bruto", fmtLek(profit)]].map(([k, v]) => <div key={k} className="rounded-lg bg-card p-4"><div className="text-[11px] text-muted-foreground">{k}</div><div className="mt-1 text-lg font-semibold tabular">{v}</div></div>)}</div>
+      <div className="mb-4 grid gap-3 sm:grid-cols-4">{[["Porosi", String(mine.filter(s => !s.isReturn).length)], ["Kg gjithsej", fmtKg(kg, 0)], ["Të ardhura", fmtLek(total)], ["Fitim bruto", fmtLek(profit)]].map(([k, v]) => <div key={k} className="rounded-lg bg-card p-4"><div className="text-[11px] text-muted-foreground">{k}</div><div className="mt-1 text-lg font-semibold tabular">{v}</div></div>)}</div>
       <Card><CardHeader><CardTitle>Historia e porosive</CardTitle></CardHeader><CardContent className="space-y-3">
-        {mine.map(s => <div key={s.id} className="rounded-md border p-3 text-sm"><div className="mb-2 flex justify-between"><span className="font-medium">{fmtDate(s.date)}</span><span className="tabular text-exit">{fmtLek(s.totalValue)}</span></div>{s.lines.map((l, i) => <div key={i} className="flex justify-between py-1 text-xs text-muted-foreground"><span>{products.find(p => p.id === l.productId)?.name} · Lot {shipments.find(x => x.id === l.shipmentId)?.lots[0]?.lotNumber} · {l.qty ?? "sasi e panjohur"} {shipments.find(x => x.id === l.shipmentId)?.loadType === "PALLET" ? "paleta" : "kartona"}</span><span className="tabular">{fmtKg(l.kg)} × {fmtNum(l.pricePerKg)}</span></div>)}</div>)}
+        {mine.map(s => <div key={s.id} className="rounded-md border p-3 text-sm"><div className="mb-2 flex justify-between"><span className="font-medium">{fmtDate(s.date)}{s.isReturn && <span className="ml-2 rounded bg-entry/15 px-1.5 py-0.5 text-[10px] text-entry">KTHIM · kredit</span>}</span><span className={s.isReturn ? "tabular text-entry" : "tabular text-exit"}>{fmtLek(s.totalValue)}</span></div>{s.lines.map((l, i) => <div key={i} className="flex justify-between py-1 text-xs text-muted-foreground"><span>{products.find(p => p.id === l.productId)?.name} · {(() => { const sh = shipments.find(x => x.id === l.shipmentId); return sh ? shipmentLabel(sh) : "—"; })()} · {l.qty == null ? "sasi e panjohur" : `${Math.abs(l.qty)} ${shipments.find(x => x.id === l.shipmentId)?.loadType === "PALLET" ? "paleta" : "kartona"}`}</span><span className="tabular">{fmtKg(l.kg)} × {fmtNum(l.pricePerKg)}</span></div>)}</div>)}
         {!mine.length && <p className="text-sm text-muted-foreground">Ky klient nuk ka porosi ende.</p>}
       </CardContent></Card>
     </>

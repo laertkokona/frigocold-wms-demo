@@ -18,7 +18,7 @@ export const POST = withRequestLog({ route: "/api/commands", action: "command" }
   log.action(parsed.data.type);
   const requestId = z.string().uuid().safeParse(body?.requestId);
   if (requestId.success) log.operation(requestId.data);
-  if ((parsed.data.type === "addShipment" || parsed.data.type === "finalizeSale") && !requestId.success) { log.reason("missing_operation_id"); return NextResponse.json({ error: "Request ID is required" }, { status: 400 }); }
+  if (["addShipment", "finalizeSale", "addReturn", "recordShortage"].includes(parsed.data.type) && !requestId.success) { log.reason("missing_operation_id"); return NextResponse.json({ error: "Request ID is required" }, { status: 400 }); }
   const includeState = request.headers.get("x-include-state") !== "0";
   try {
     const result = await executeCommand(parsed.data, user.id, requestId.success ? requestId.data : undefined);

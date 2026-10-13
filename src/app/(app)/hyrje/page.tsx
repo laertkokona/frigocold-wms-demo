@@ -1,8 +1,9 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRight, CalendarCheck, Check, ChevronRight, ClipboardList, Plus, Save, Search, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarCheck, Check, ChevronRight, ClipboardList, Plus, Save, Search, Trash2, X, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -122,7 +123,7 @@ export default function HyrjePage() {
     <AnimatePresence mode="wait">
       {step === "product" && (
         <motion.div key="product" {...fade}>
-          <PageHeader title="Hyrje e re" sub="Zgjidh kategorinë e produktit — ngarkesa regjistrohet nën të, me furnizuesin dhe specifikimet e veta" />
+          <PageHeader title="Hyrje e re" sub="Zgjidh kategorinë e produktit — ngarkesa regjistrohet nën të, me furnizuesin dhe specifikimet e veta" right={<Button asChild variant="outline"><Link href="/hyrje/kthim"><Undo2 /> Kthim nga klienti</Link></Button>} />
           {store.drafts.length > 0 && (
             <section className="mb-6" aria-label="Draft-e">
               <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground"><span>Draft-e të papërfunduara</span><span className="text-warn">{store.drafts.length}</span></div>

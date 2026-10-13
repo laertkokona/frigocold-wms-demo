@@ -48,7 +48,7 @@ export function flows(shipments: Shipment[], sales: Sale[], months: string[]) {
   return months.map(m => ({
     m, label: monthLabel(m),
     inKg: shipments.filter(s => monthKey(s.entryDate) === m).reduce((a, s) => a + s.netKgActual, 0),
-    outKg: sales.filter(s => monthKey(s.date) === m).reduce((a, s) => a + s.totalKg, 0),
+    outKg: sales.filter(s => !s.isReturn && monthKey(s.date) === m).reduce((a, s) => a + s.totalKg, 0),
     revenue: sales.filter(s => monthKey(s.date) === m).reduce((a, s) => a + s.totalValue, 0),
     cost: sumCosts(shipments.filter(s => monthKey(s.entryDate) === m).map(s => s.totalCost)),
   }));
@@ -63,7 +63,7 @@ export function clientStats(clients: Client[], sales: Sale[]) {
     const valCur = all.filter(s => monthKey(s.date) === cur).reduce((a, s) => a + s.totalValue, 0);
     const last = all.map(s => s.date).sort().at(-1);
     const daysSince = last ? -daysUntil(last) : Infinity;
-    return { client: c, orders: all.length, kgAll: all.reduce((a, s) => a + s.totalKg, 0), valueAll: all.reduce((a, s) => a + s.totalValue, 0), kgCur, kgPrev, valCur, delta: kgPrev ? (kgCur - kgPrev) / kgPrev : (kgCur ? 1 : 0), last, daysSince };
+    return { client: c, orders: all.filter(s => !s.isReturn).length, kgAll: all.reduce((a, s) => a + s.totalKg, 0), valueAll: all.reduce((a, s) => a + s.totalValue, 0), kgCur, kgPrev, valCur, delta: kgPrev ? (kgCur - kgPrev) / kgPrev : (kgCur ? 1 : 0), last, daysSince };
   }).sort((a, b) => b.valCur - a.valCur);
 }
 

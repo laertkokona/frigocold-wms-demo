@@ -14,9 +14,10 @@ export const uid = () => Math.random().toString(36).slice(2, 10);
 
 /** Short label for how a sale line's weight was recorded. `unit` = "kartona" | "paleta". */
 export function saleMethodLabel(l: { method: string; qty: number | null; kg: number; fixedKg?: number }, unit: string) {
+  if (l.method === "RETURN") return "Kthim nga klienti (kredit)";
   if (l.method === "FIXED") return `Peshë fikse (${l.fixedKg} kg × ${l.qty})`;
   if (l.method === "VARIABLE") return `Peshë e ndryshme (${l.qty} futur)`;
   if (l.method === "TOTAL") return l.qty == null ? "Pesha totale (kg)" : `Totali nga fatura (mes. ${(l.kg / l.qty).toFixed(2)} kg/${unit === "paleta" ? "paletë" : "karton"})`;
   return `Paleta (${l.qty})`;
 }
-export const saleMethodShort = (m: string) => m === "FIXED" ? "peshë fikse" : m === "VARIABLE" ? "peshë e ndryshme" : m === "TOTAL" ? "totali nga fatura" : "paleta";
+export const saleMethodShort = (m: string) => m === "RETURN" ? "kthim (kredit)" : m === "FIXED" ? "peshë fikse" : m === "VARIABLE" ? "peshë e ndryshme" : m === "TOTAL" ? "totali nga fatura" : "paleta";

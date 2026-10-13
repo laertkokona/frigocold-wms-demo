@@ -8,8 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Banner } from "@/components/ui/banner";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/shell";
+import { SearchBox, matches } from "@/components/search-box";
 import { remainingCount, remainingKg, useStore } from "@/lib/store";
 import { fefoOrder } from "@/lib/calc";
 import { loadSpecLabel, loadWeightType, shipmentLabel } from "@/lib/stock";
@@ -27,6 +27,7 @@ export default function DaljePage() {
   const [lines, setLines] = useState<SaleLine[]>([]);
   const [product, setProduct] = useState<Product | null>(null);
   const [ship, setShip] = useState<Shipment | null>(null);
+  const [qProduct, setQProduct] = useState(""); const [qShip, setQShip] = useState(""); const [qClient, setQClient] = useState("");
   const [method, setMethod] = useState<SaleMethod>("VARIABLE");
   const [fixedKg, setFixedKg] = useState(""); const [fixedN, setFixedN] = useState("");
   const [fmt, setFmt] = useState({ i: 2, d: 2 }); const [buf, setBuf] = useState(""); const [weights, setWeights] = useState<number[]>([]);
@@ -106,12 +107,14 @@ export default function DaljePage() {
       {step === "product" && (
         <motion.div key="product" {...fade}>
           <PageHeader title="Zgjidh produktin" right={<Button variant="ghost" onClick={() => setStep("order")}><ArrowLeft /> Porosia</Button>} />
+          <SearchBox value={qProduct} onChange={setQProduct} placeholder="Kërko produktin…" autoFocus />
           <div className="space-y-2">
-            {store.products.map(p => { const sh = store.shipments.filter(s => s.productId === p.id && remainingKg(s) > 0); const kg = sh.reduce((a, s) => a + remainingKg(s), 0); if (!sh.length) return null; return (
-              <button key={p.id} onClick={() => { setProduct(p); setStep("shipment"); }} className="flex w-full items-center justify-between rounded-lg border bg-card px-4 py-3.5 text-left transition-colors hover:border-exit/60">
+            {store.products.filter(p => matches(qProduct, p.name)).map(p => { const sh = store.shipments.filter(s => s.productId === p.id && remainingKg(s) > 0); const kg = sh.reduce((a, s) => a + remainingKg(s), 0); if (!sh.length) return null; return (
+              <button key={p.id} onClick={() => { setProduct(p); setQShip(""); setStep("shipment"); }} className="flex w-full items-center justify-between rounded-lg border bg-card px-4 py-3.5 text-left transition-colors hover:border-exit/60">
                 <div><div className="text-sm font-medium">{p.name}</div><div className="text-xs text-muted-foreground">{sh.length} ngarkesa · {fmtKg(kg, 0)}</div></div>
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </button>); })}
+            {!store.products.some(p => matches(qProduct, p.name) && store.shipments.some(s => s.productId === p.id && remainingKg(s) > 0)) && <p className="py-8 text-center text-sm text-muted-foreground">Asnjë produkt në stok nuk përputhet me kërkimin.</p>}
           </div>
         </motion.div>
       )}
@@ -120,8 +123,9 @@ export default function DaljePage() {
         <motion.div key="shipment" {...fade}>
           <PageHeader title={`Nga cila dërgesë? — ${product.name}`} right={<Button variant="ghost" onClick={() => setStep("product")}><ArrowLeft /></Button>} />
           <Banner tone="warn" className="mb-4">Rendi FEFO — dërgesa me skadim më të afërt duhet shitur e para. Rekomandimi nuk është detyrim.</Banner>
+          {fefo.length > 4 && <SearchBox value={qShip} onChange={setQShip} placeholder="Kërko lot, furnizues, origjinë, porosi…" />}
           <div className="space-y-2">
-            {fefo.map((s, i) => { const d = daysUntil(s.expFrom); const sup = store.suppliers.find(x => x.id === s.supplierId); return (
+            {fefo.map((s, i) => { const d = daysUntil(s.expFrom); const sup = store.suppliers.find(x => x.id === s.supplierId); if (!matches(qShip, shipmentLabel(s), sup?.name, s.orderNr, s.origin, s.specs)) return null; return (
               <button key={s.id} onClick={() => { setShip(s); setMethod(s.countActual == null ? "TOTAL" : loadWeightType(s)); setTotN(""); setTotKg(""); setStep(s.countActual == null ? "total" : "method"); }} className={cn("flex w-full items-center justify-between rounded-lg border bg-card px-4 py-3.5 text-left transition-colors hover:border-exit/60", i === 0 && "border-danger/40")}>
                 <div><div className="text-sm font-medium">{shipmentLabel(s)} · {sup?.name ?? "Pa furnizues"}</div><div className="text-xs text-muted-foreground">{loadSpecLabel(s)}</div><div className="text-xs text-muted-foreground">Porosia {s.orderNr ?? "—"} · {remainingCount(s) ?? "sasi e panjohur"} {s.loadType === "PALLET" ? "paleta" : "kartona"} · {fmtKg(remainingKg(s), 1)} · skadon {fmtMonth(s.expFrom)}</div></div>
                 {i === 0 ? <Badge variant="solid">shit i pari · {d} ditë</Badge> : <Badge variant="entry">{fmtMonth(s.expFrom)}</Badge>}
@@ -248,7 +252,15 @@ export default function DaljePage() {
           <PageHeader title="Klienti" sub="Zgjidh klientin për të finalizuar porosinë" right={<Button variant="ghost" onClick={() => setStep("order")}><ArrowLeft /></Button>} />
           <div className="max-w-md">
             <Label>Klienti</Label>
-            <Select value={clientId} onValueChange={value => { requestId.current = null; setClientId(value); }}><SelectTrigger><SelectValue placeholder="Zgjidh klientin" /></SelectTrigger><SelectContent>{store.clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name} — {c.city}</SelectItem>)}</SelectContent></Select>
+            <SearchBox value={qClient} onChange={setQClient} placeholder="Kërko klientin (emri, qyteti)…" autoFocus={!clientId} />
+            <div className="scroll-thin max-h-64 space-y-1 overflow-y-auto rounded-md border p-1" role="listbox" aria-label="Klientët">
+              {store.clients.filter(c => matches(qClient, c.name, c.city, c.contact)).map(c => (
+                <button key={c.id} type="button" role="option" aria-selected={clientId === c.id} onClick={() => { requestId.current = null; setClientId(c.id); }}
+                  className={cn("flex w-full items-center justify-between rounded px-3 py-2 text-left text-sm hover:bg-accent", clientId === c.id && "bg-exit/15 font-medium text-exit")}>
+                  <span>{c.name}</span><span className="text-xs text-muted-foreground">{c.city}</span>
+                </button>))}
+              {!store.clients.some(c => matches(qClient, c.name, c.city, c.contact)) && <p className="px-3 py-4 text-center text-xs text-muted-foreground">Asnjë klient nuk përputhet.</p>}
+            </div>
             <Label className="mt-4">Data e shitjes</Label>
             <div className="flex gap-2"><Input type="date" value={saleDate} max={today} min={minDate || undefined} onChange={e => { requestId.current = null; setSaleDate(e.target.value); }} className="flex-1" />{saleDate !== today && <Button variant="outline" onClick={() => { requestId.current = null; setSaleDate(today); }}>Sot</Button>}</div>
             {dateErr ? <p className="mt-1.5 text-xs text-danger">{dateErr}</p> : saleDate !== today ? <p className="mt-1.5 text-xs text-warn">Shitje e mëparshme — do të regjistrohet më {fmtDate(saleDate)} (llogaritet në atë ditë e muaj te Financa).</p> : <p className="mt-1.5 text-xs text-muted-foreground">Sot. Ndryshoje nëse po regjistron një faturë të një dite tjetër.</p>}

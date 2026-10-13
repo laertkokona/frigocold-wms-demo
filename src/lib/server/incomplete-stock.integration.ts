@@ -102,6 +102,37 @@ async function main() {
     await executeCommand(commandSchema.parse({ type: "updateShipmentDetails", id: shipmentId, data: { entryDate: earlierIso } }), user.id);
     assert.equal((await getState()).shipments.find(s => s.id === shipmentId)?.entryDate, earlierIso);
     await assert.rejects(executeCommand(commandSchema.parse({ type: "updateShipmentDetails", id: shipmentId, data: { entryDate: "2999-01-01" } }), user.id), /future/);
+    // Client return: goods come back as a linked load copying the sold load's data; the client is credited.
+    const knownLine = await db.saleLine.findFirstOrThrow({ where: { shipmentId: knownId } });
+    const ret = (data: object) => executeCommand(commandSchema.parse({ type: "addReturn", data: { saleLineId: knownLine.id, entryDate: today, reason: "Produkt i dëmtuar", pricePerKg: 5, ...data } }), user.id, randomUUID());
+    const revenueBefore = (await getAccountingReport("all", product.id, 1)).cur.revenue;
+    const back = String((await ret({ kg: 4, qty: 1 })).id);
+    const st = await getState();
+    const returned = st.shipments.find(s => s.id === back)!;
+    assert.equal(returned.returnOf?.shipmentId, knownId);
+    assert.equal(returned.costPerKg, 2);
+    assert.equal(returned.expFrom, "2027-01-01");
+    assert.deepEqual(returned.lots, [{ lotNumber: "L", qty: 1 }]);
+    assert.ok(st.sales.some(s => s.isReturn && s.totalKg === -4 && s.totalValue === -20));
+    const afterReturn = (await getAccountingReport("all", product.id, 1)).cur;
+    assert.equal(afterReturn.revenue, revenueBefore - 20);
+    assert.equal(afterReturn.returnsKg, 4);
+    await assert.rejects(ret({ kg: 7 }), /More kilograms returned/);
+    await assert.rejects(ret({ kg: 1, qty: 1 }), /More units returned/);
+    // Shortage: kilograms not physically there are written off with a reason and leave stock as a loss.
+    const shortage = (id: string, data: object) => executeCommand(commandSchema.parse({ type: "recordShortage", id, data: { reason: "SUPPLIER", date: today, ...data } }), user.id, randomUUID());
+    const stockBefore = (await getDashboard()).totalKg;
+    await shortage(back, { kg: 1.5 });
+    assert.equal((await getDashboard()).totalKg, stockBefore - 1.5);
+    const withShortage = (await getState()).shipments.find(s => s.id === back)!;
+    assert.equal(withShortage.adjustedKg, 1.5);
+    assert.equal((await getAccountingReport("all", product.id, 1)).cur.losses.value, 3);
+    await assert.rejects(shortage(back, { kg: 3 }), /More kilograms than remain/);
+    await assert.rejects(executeCommand(commandSchema.parse({ type: "cancelShipment", id: back }), user.id), /shortages/);
+    await shortage(back, { kg: 2.5, reason: "DAMAGED" });
+    assert.ok(!(await browse({ ...params, kind: "inventory" })).items.some(s => s.id === back));
+    assert.equal((await browse({ ...params, kind: "movements", filter: "ADJ" })).total, 2);
+    assert.equal((await browse({ ...params, kind: "movements", filter: "RET" })).total, 1);
     console.log("Integration passed: migration preservation, incomplete receiving, kg-only sales, unit/kg overdraw protection, idempotency, browsing, missing-cost reporting, enrichment, immutable ledger and concurrent sales.");
   } finally {
     shared.frigocoldDb = previous;

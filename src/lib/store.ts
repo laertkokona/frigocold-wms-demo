@@ -1,8 +1,8 @@
 "use client";
 import { create } from "zustand";
-import type { Client, Draft, Product, Sale, Shipment, Supplier, Thresholds } from "./types";
+import type { Client, Draft, Product, Sale, Shipment, Supplier, Thresholds, ShortageReason, StockAdjustment } from "./types";
 
-type Data = { products: Product[]; suppliers: Supplier[]; clients: Client[]; shipments: Shipment[]; drafts: Draft[]; sales: Sale[]; thresholds: Thresholds };
+type Data = { products: Product[]; suppliers: Supplier[]; clients: Client[]; shipments: Shipment[]; drafts: Draft[]; sales: Sale[]; adjustments: StockAdjustment[]; thresholds: Thresholds };
 interface State extends Data {
   hydrated: boolean;
   error: string | null;
@@ -13,6 +13,8 @@ interface State extends Data {
   updateProduct: (id: string, patch: { name: string }) => Promise<void>;
   updateShipmentDetails: (id: string, patch: Pick<Shipment, "supplierId" | "orderNr" | "costPerKg"> & { entryDate?: string }) => Promise<void>;
   cancelShipment: (id: string) => Promise<void>;
+  addReturn: (r: { saleLineId: string; kg: number; qty: number | null; pricePerKg: number; reason: string; entryDate: string; requestId: string }) => Promise<Shipment>;
+  recordShortage: (shipmentId: string, a: { kg: number; qty: number | null; reason: ShortageReason; note?: string; date: string; requestId: string }) => Promise<void>;
   updateClient: (id: string, patch: Partial<Omit<Client, "id">>) => Promise<void>;
   updateSupplier: (id: string, patch: Partial<Omit<Supplier, "id">>) => Promise<void>;
   addShipment: (s: Omit<Shipment, "id" | "soldKg" | "soldCount"> & { entryDate?: string; draftId?: string; requestId: string }) => Promise<Shipment>;
@@ -22,7 +24,7 @@ interface State extends Data {
   setThresholds: (t: Thresholds) => Promise<void>;
 }
 
-const empty: Data = { products: [], suppliers: [], clients: [], shipments: [], drafts: [], sales: [], thresholds: { expiryDays: 60, lowShipmentCount: 5, lowProductKg: {} } };
+const empty: Data = { products: [], suppliers: [], clients: [], shipments: [], drafts: [], sales: [], adjustments: [], thresholds: { expiryDays: 60, lowShipmentCount: 5, lowProductKg: {} } };
 
 async function request(path: string, body?: unknown) {
   const response = await fetch(path, { method: body ? "POST" : "GET", headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined, cache: "no-store" });
@@ -36,7 +38,7 @@ export const useStore = create<State>()((set) => {
   const command = async <T extends { id: string }>(type: string, data?: unknown, id?: string, requestId?: string): Promise<T> => {
     const payload = await request("/api/commands", { type, ...(data !== undefined ? { data } : {}), ...(id ? { id } : {}), ...(requestId ? { requestId } : {}) });
     set({ ...payload.state, error: null });
-    const collection = ({ addProduct: "products", addSupplier: "suppliers", addClient: "clients", addShipment: "shipments", saveDraft: "drafts", finalizeSale: "sales" } as Record<string, keyof Data>)[type];
+    const collection = ({ addProduct: "products", addSupplier: "suppliers", addClient: "clients", addShipment: "shipments", addReturn: "shipments", saveDraft: "drafts", finalizeSale: "sales" } as Record<string, keyof Data>)[type];
     return (collection ? payload.state[collection].find((x: { id: string }) => x.id === payload.result.id) : payload.result) ?? payload.result;
   };
   return {
@@ -48,6 +50,8 @@ export const useStore = create<State>()((set) => {
     updateProduct: async (id, data) => { await command("updateProduct", data, id); },
     updateShipmentDetails: async (id, data) => { await command("updateShipmentDetails", data, id); },
     cancelShipment: async id => { await command("cancelShipment", undefined, id); },
+    addReturn: ({ requestId, ...data }) => command<Shipment>("addReturn", data, undefined, requestId),
+    recordShortage: async (id, { requestId, ...data }) => { await command("recordShortage", data, id, requestId); },
     updateClient: async (id, data) => { await command("updateClient", data, id); },
     updateSupplier: async (id, data) => { await command("updateSupplier", data, id); },
     addShipment: ({ requestId, ...data }) => command<Shipment>("addShipment", data, undefined, requestId),

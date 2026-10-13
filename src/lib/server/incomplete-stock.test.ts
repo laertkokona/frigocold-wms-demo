@@ -120,7 +120,7 @@ test("lots are optional but quantities require and match a known count", () => {
 
 test("dashboard reports missing-cost coverage without inventing total stock value or profit", () => {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Tirane" });
-  const data = buildDashboard({ shipments: [known, unknown], products: [product], sales: [{ ...sale, date: today }], clients: [], suppliers: [], drafts: [], thresholds: { expiryDays: 3650, lowShipmentCount: 5, lowProductKg: {} } });
+  const data = buildDashboard({ shipments: [known, unknown], products: [product], sales: [{ ...sale, date: today }], clients: [], suppliers: [], drafts: [], adjustments: [], thresholds: { expiryDays: 3650, lowShipmentCount: 5, lowProductKg: {} } });
   assert.equal(data.totalKg, 180);
   assert.equal(data.totalVal, null);
   assert.equal(data.knownStockValue, 180);

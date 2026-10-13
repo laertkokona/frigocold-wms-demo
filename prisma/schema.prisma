@@ -15,6 +15,7 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   movements    Movement[]
   @@map("users")
+  adjustments  StockAdjustment[]
 }
 
 model LoginAttempt {
@@ -82,6 +83,12 @@ model Shipment {
   entryDate   String    @map("entry_date") @db.VarChar(10)
   /// Set when a load entered by mistake is cancelled; a CANCEL movement reverses its stock.
   cancelledAt DateTime? @map("cancelled_at")
+  /// Client return: the sale line the goods were sold on, the credit price per kg and the reason.
+  returnOfLineId   String?   @map("return_of_line_id") @db.Uuid
+  returnReason     String?   @map("return_reason") @db.VarChar(200)
+  returnPricePerKg Decimal?  @map("return_price_per_kg") @db.Decimal(12, 4)
+  returnOfLine     SaleLine? @relation("ReturnOfLine", fields: [returnOfLineId], references: [id], onDelete: Restrict)
+  adjustments      StockAdjustment[]
   fixedKg     Decimal?  @map("fixed_kg") @db.Decimal(10, 3)
   origin      String?   @db.VarChar(100)
   specs       String?   @db.VarChar(200)
@@ -91,6 +98,7 @@ model Shipment {
   lots        ShipmentLot[]
   saleLines   SaleLine[]
   movements   Movement[]
+  @@index([returnOfLineId])
   @@index([productId, expFrom])
   @@index([supplierId])
   @@index([orderNr])
@@ -142,6 +150,7 @@ model SaleLine {
   shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
   @@index([shipmentId])
   @@map("sale_lines")
+  returns    Shipment[] @relation("ReturnOfLine")
 }
 
 // Append-only stock ledger. Stock is the signed sum of kg per shipment.
@@ -167,4 +176,21 @@ model Settings {
   lowShipmentCount Int  @map("low_shipment_count")
   lowProductKg     Json @map("low_product_kg")
   @@map("settings")
+}
+
+/// Kilograms (and units) found missing from a load, mirrored by an ADJUST movement.
+model StockAdjustment {
+  id         String   @id @default(uuid()) @db.Uuid
+  shipmentId String   @map("shipment_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  kg         Decimal  @db.Decimal(12, 3)
+  qty        Int?
+  reason     String   @db.VarChar(30)
+  note       String?  @db.VarChar(300)
+  date       String   @db.VarChar(10)
+  createdAt  DateTime @default(now()) @map("created_at")
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([shipmentId])
+  @@map("stock_adjustments")
 }
