@@ -15,6 +15,8 @@ interface State extends Data {
   cancelShipment: (id: string) => Promise<void>;
   addReturn: (r: { saleLineId: string; kg: number; qty: number | null; pricePerKg: number; reason: string; entryDate: string; requestId: string }) => Promise<Shipment>;
   recordShortage: (shipmentId: string, a: { kg: number; qty: number | null; reason: ShortageReason; note?: string; date: string; requestId: string }) => Promise<void>;
+  cancelSale: (saleId: string, reason: string) => Promise<void>;
+  correctShipmentKg: (shipmentId: string, c: { netKgActual: number; updateDoc: boolean; note: string }) => Promise<void>;
   updateClient: (id: string, patch: Partial<Omit<Client, "id">>) => Promise<void>;
   updateSupplier: (id: string, patch: Partial<Omit<Supplier, "id">>) => Promise<void>;
   addShipment: (s: Omit<Shipment, "id" | "soldKg" | "soldCount"> & { entryDate?: string; draftId?: string; requestId: string }) => Promise<Shipment>;
@@ -52,6 +54,8 @@ export const useStore = create<State>()((set) => {
     cancelShipment: async id => { await command("cancelShipment", undefined, id); },
     addReturn: ({ requestId, ...data }) => command<Shipment>("addReturn", data, undefined, requestId),
     recordShortage: async (id, { requestId, ...data }) => { await command("recordShortage", data, id, requestId); },
+    cancelSale: async (id, reason) => { await command("cancelSale", { reason }, id); },
+    correctShipmentKg: async (id, data) => { await command("correctShipmentKg", data, id); },
     updateClient: async (id, data) => { await command("updateClient", data, id); },
     updateSupplier: async (id, data) => { await command("updateSupplier", data, id); },
     addShipment: ({ requestId, ...data }) => command<Shipment>("addShipment", data, undefined, requestId),

@@ -133,7 +133,54 @@ async function main() {
     assert.ok(!(await browse({ ...params, kind: "inventory" })).items.some(s => s.id === back));
     assert.equal((await browse({ ...params, kind: "movements", filter: "ADJ" })).total, 2);
     assert.equal((await browse({ ...params, kind: "movements", filter: "RET" })).total, 1);
-    console.log("Integration passed: migration preservation, incomplete receiving, kg-only sales, unit/kg overdraw protection, idempotency, browsing, missing-cost reporting, enrichment, immutable ledger and concurrent sales.");
+    // Cancelling a sale recorded by mistake puts its kilograms back on the load and drops it from every figure,
+    // while the sale stays in the ledger and shows in Lëvizjet as cancelled.
+    const cancelSale = (id: string, reason = "Ngarkesa e gabuar") => executeCommand(commandSchema.parse({ type: "cancelSale", id, data: { reason } }), user.id);
+    const wrongLoad = String((await receive({ productId: product.id, netKgActual: 100, costPerKg: 2, expFrom: "2027-01-01", entryDate: today })).id);
+    const wrongSale = String((await sell(wrongLoad, 30, null, 7)).id);
+    const salesBefore = (await getState()).sales.length, kgBeforeCancel = (await getDashboard()).totalKg;
+    const outBefore = (await browse({ ...params, kind: "movements", filter: "OUT" })).total;
+    await cancelSale(wrongSale);
+    const afterCancel = await getState();
+    assert.equal(afterCancel.sales.length, salesBefore - 1);
+    assert.equal(afterCancel.shipments.find(s => s.id === wrongLoad)?.soldKg, 0);
+    assert.equal((await getDashboard()).totalKg, kgBeforeCancel + 30);
+    assert.equal((await browse({ ...params, kind: "movements", filter: "OUT" })).total, outBefore - 1);
+    const cancelledRows = await browse({ ...params, kind: "movements", filter: "ANUL" });
+    assert.equal(cancelledRows.total, 1);
+    assert.match(String(cancelledRows.items[0].method), /anuluar .* — Ngarkesa e gabuar/);
+    assert.equal(await db.movement.count({ where: { saleId: wrongSale } }), 2);
+    await assert.rejects(cancelSale(wrongSale), /already cancelled/);
+    const wrongLine = await db.saleLine.findFirstOrThrow({ where: { saleId: wrongSale } });
+    await assert.rejects(executeCommand(commandSchema.parse({ type: "addReturn", data: { saleLineId: wrongLine.id, kg: 1, entryDate: today, reason: "x", pricePerKg: 1 } }), user.id, randomUUID()), /cancelled/);
+    await assert.rejects(cancelSale(knownLine.saleId), /returns/);
+    // A load whose only sale was cancelled can itself be cancelled.
+    await executeCommand(commandSchema.parse({ type: "cancelShipment", id: wrongLoad }), user.id);
+    // Correcting received kilograms keeps the load and its sales, records the change and moves stock by the difference.
+    const correct = (id: string, netKgActual: number, updateDoc = false) => executeCommand(commandSchema.parse({ type: "correctShipmentKg", id, data: { netKgActual, updateDoc, note: "Sipas kontabilistes" } }), user.id);
+    const typo = String((await receive({ productId: product.id, netKgDoc: 100, netKgActual: 100, costPerKg: 2, expFrom: "2027-01-01", entryDate: today })).id);
+    await sell(typo, 60, null);
+    await assert.rejects(correct(typo, 50), /already left/);
+    const kgBeforeCorrect = (await getDashboard()).totalKg;
+    await correct(typo, 124.91, true);
+    await correct(typo, 124.91, true); // same figure again changes nothing
+    const corrected = (await getState()).shipments.find(s => s.id === typo)!;
+    assert.equal(corrected.netKgActual, 124.91);
+    assert.equal(corrected.netKgDoc, 124.91);
+    assert.equal(corrected.soldKg, 60);
+    assert.equal(corrected.corrections?.length, 1);
+    assert.deepEqual({ ...corrected.corrections![0], date: "" }, { kgBefore: 100, kgAfter: 124.91, docKgBefore: 100, docKgAfter: 124.91, note: "Sipas kontabilistes", date: "" });
+    assert.equal(Math.round(((await getDashboard()).totalKg - kgBeforeCorrect) * 1000) / 1000, 24.91);
+    const corrections = await browse({ ...params, kind: "movements", filter: "KOR" });
+    assert.equal(corrections.total, 1);
+    assert.equal(corrections.items[0].kg, 24.91);
+    assert.match(String(corrections.items[0].method), /100 → 124\.91 kg — Sipas kontabilistes/);
+    assert.equal((await browse({ ...params, kind: "movements", filter: "IN" })).items.find(r => r.id === typo)?.kg, 100);
+    await correct(typo, 90);
+    assert.equal((await getState()).shipments.find(s => s.id === typo)?.netKgDoc, 124.91);
+    await assert.rejects(correct(back, 3), /client return/);
+    await assert.rejects(correct(dupId, 3), /cancelled/);
+    console.log("Integration passed: migration preservation, incomplete receiving, kg-only sales, unit/kg overdraw protection, idempotency, browsing, missing-cost reporting, enrichment, immutable ledger, concurrent sales, cancelled sales and kg corrections.");
   } finally {
     shared.frigocoldDb = previous;
     await db.$disconnect();

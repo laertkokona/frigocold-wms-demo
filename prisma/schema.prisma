@@ -16,6 +16,7 @@ model User {
   movements    Movement[]
   @@map("users")
   adjustments  StockAdjustment[]
+  corrections  ShipmentCorrection[]
 }
 
 model LoginAttempt {
@@ -89,6 +90,7 @@ model Shipment {
   returnPricePerKg Decimal?  @map("return_price_per_kg") @db.Decimal(12, 4)
   returnOfLine     SaleLine? @relation("ReturnOfLine", fields: [returnOfLineId], references: [id], onDelete: Restrict)
   adjustments      StockAdjustment[]
+  corrections      ShipmentCorrection[]
   fixedKg     Decimal?  @map("fixed_kg") @db.Decimal(10, 3)
   origin      String?   @db.VarChar(100)
   specs       String?   @db.VarChar(200)
@@ -129,6 +131,9 @@ model Sale {
   clientId  String     @map("client_id") @db.Uuid
   date      String     @db.VarChar(10)
   createdAt DateTime   @default(now()) @map("created_at")
+  /// Set when a sale recorded by mistake is cancelled; VOID movements put its stock back.
+  cancelledAt  DateTime? @map("cancelled_at")
+  cancelReason String?   @map("cancel_reason") @db.VarChar(300)
   client    Client     @relation(fields: [clientId], references: [id], onDelete: Restrict)
   lines     SaleLine[]
   movements Movement[]
@@ -193,4 +198,22 @@ model StockAdjustment {
   user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
   @@index([shipmentId])
   @@map("stock_adjustments")
+}
+
+/// A correction of a load's received kilograms (kg_before → kg_after), mirrored by a CORRECT movement of the difference.
+model ShipmentCorrection {
+  id          String   @id @default(uuid()) @db.Uuid
+  shipmentId  String   @map("shipment_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  kgBefore    Decimal  @map("kg_before") @db.Decimal(12, 3)
+  kgAfter     Decimal  @map("kg_after") @db.Decimal(12, 3)
+  docKgBefore Decimal? @map("doc_kg_before") @db.Decimal(12, 3)
+  docKgAfter  Decimal? @map("doc_kg_after") @db.Decimal(12, 3)
+  note        String   @db.VarChar(300)
+  date        String   @db.VarChar(10)
+  createdAt   DateTime @default(now()) @map("created_at")
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([shipmentId])
+  @@map("shipment_corrections")
 }

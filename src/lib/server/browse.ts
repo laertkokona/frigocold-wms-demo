@@ -12,6 +12,8 @@ const sorts: Record<BrowseKind, Record<string, string>> = {
   search: { date: 'date', title: 'title' },
 };
 
+const MOVEMENT_TYPES = ["IN", "OUT", "RET", "ADJ", "ANUL", "KOR"];
+
 function baseQuery(p: BrowseParams): Prisma.Sql {
   const match = `%${p.q}%`;
   const dateQuery = /^\d{2}\/\d{2}\/\d{4}$/.test(p.q) ? `${p.q.slice(6)}-${p.q.slice(3, 5)}-${p.q.slice(0, 2)}` : p.q;
@@ -24,7 +26,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
       FROM clients c LEFT JOIN (
         SELECT sa.client_id, COUNT(DISTINCT sa.id)::int AS orders, SUM(sl.kg) AS kg,
           SUM(sl.kg * sl.price_per_kg) AS value, MAX(sa.date) AS last
-        FROM sales sa LEFT JOIN sale_lines sl ON sl.sale_id = sa.id GROUP BY sa.client_id
+        FROM sales sa LEFT JOIN sale_lines sl ON sl.sale_id = sa.id WHERE sa.cancelled_at IS NULL GROUP BY sa.client_id
       ) t ON t.client_id = c.id
       WHERE c.name ILIKE ${match} OR c.city ILIKE ${match} OR COALESCE(c.contact, '') ILIKE ${match}
     `;
@@ -66,12 +68,14 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
       SELECT * FROM (
         SELECT sh.id, sh.entry_date AS date, CASE WHEN sh.return_of_line_id IS NULL THEN 'IN' ELSE 'RET' END AS type, p.name AS product,
           COALESCE(l.lots, '') AS lot, COALESCE(rc.name, su.name) AS party, sh.count_actual AS qty,
-          sh.net_kg_actual AS kg, sh.net_kg_actual * sh.cost_per_kg AS value,
+          COALESCE(im.kg, sh.net_kg_actual) AS kg, COALESCE(im.kg, sh.net_kg_actual) * sh.cost_per_kg AS value,
           CASE WHEN sh.return_of_line_id IS NOT NULL THEN CONCAT('kthim: ', sh.return_reason)
             WHEN sh.order_nr IS NULL THEN 'Pa nr. porosie' ELSE CONCAT('Porosia ', sh.order_nr) END AS method
         FROM shipments sh JOIN products p ON p.id = sh.product_id
         LEFT JOIN suppliers su ON su.id = sh.supplier_id
         LEFT JOIN sale_lines rl ON rl.id = sh.return_of_line_id LEFT JOIN sales rs ON rs.id = rl.sale_id LEFT JOIN clients rc ON rc.id = rs.client_id
+        -- The entry row shows the kilograms as received; later corrections appear as their own KOR rows.
+        LEFT JOIN (SELECT shipment_id, SUM(kg) AS kg FROM movements WHERE type = 'IN' GROUP BY shipment_id) im ON im.shipment_id = sh.id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         WHERE sh.cancelled_at IS NULL
         UNION ALL
@@ -82,6 +86,24 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         JOIN shipments sh ON sh.id = sl.shipment_id JOIN products p ON p.id = sh.product_id
         JOIN clients c ON c.id = sa.client_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
+        WHERE sa.cancelled_at IS NULL
+        UNION ALL
+        SELECT sl.id, sa.date, 'ANUL'::text, p.name, COALESCE(l.lots, ''), c.name,
+          sl.qty, sl.kg, sl.kg * sl.price_per_kg,
+          CONCAT('shitje e anuluar më ', TO_CHAR((sa.cancelled_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Tirane', 'DD/MM/YYYY'), ' — ', sa.cancel_reason)
+        FROM sale_lines sl JOIN sales sa ON sa.id = sl.sale_id
+        JOIN shipments sh ON sh.id = sl.shipment_id JOIN products p ON p.id = sh.product_id
+        JOIN clients c ON c.id = sa.client_id
+        LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
+        WHERE sa.cancelled_at IS NOT NULL
+        UNION ALL
+        SELECT k.id, k.date, 'KOR'::text, p.name, COALESCE(l.lots, ''), su.name,
+          NULL::int, k.kg_after - k.kg_before, (k.kg_after - k.kg_before) * sh.cost_per_kg,
+          CONCAT('korrigjim i kg: ', TRIM(TO_CHAR(k.kg_before, 'FM999999990.999'), '.'), ' → ', TRIM(TO_CHAR(k.kg_after, 'FM999999990.999'), '.'), ' kg — ', k.note)
+        FROM shipment_corrections k JOIN shipments sh ON sh.id = k.shipment_id JOIN products p ON p.id = sh.product_id
+        LEFT JOIN suppliers su ON su.id = sh.supplier_id
+        LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
+        WHERE sh.cancelled_at IS NULL
         UNION ALL
         SELECT a.id, a.date, 'ADJ'::text, p.name, COALESCE(l.lots, ''), NULL::varchar,
           a.qty, a.kg, a.kg * sh.cost_per_kg,
@@ -91,7 +113,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         FROM stock_adjustments a JOIN shipments sh ON sh.id = a.shipment_id JOIN products p ON p.id = sh.product_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         WHERE sh.cancelled_at IS NULL
-      ) m WHERE (${["IN", "OUT", "RET", "ADJ"].includes(p.filter) ? p.filter : "ALL"} = 'ALL' OR m.type = ${["IN", "OUT", "RET", "ADJ"].includes(p.filter) ? p.filter : "ALL"})
+      ) m WHERE (${MOVEMENT_TYPES.includes(p.filter) ? p.filter : "ALL"} = 'ALL' OR m.type = ${MOVEMENT_TYPES.includes(p.filter) ? p.filter : "ALL"})
         AND (m.product ILIKE ${match} OR m.lot ILIKE ${match} OR m.party ILIKE ${match} OR m.method ILIKE ${match})
     `;
     case "search": return Prisma.sql`
@@ -113,7 +135,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         WHERE p.name ILIKE ${match} GROUP BY p.id
         UNION ALL
         SELECT c.id, 'cli'::text, c.name, c.city, COALESCE(SUM(sl.kg * sl.price_per_kg), 0), NULL::varchar(10)
-        FROM clients c LEFT JOIN sales sa ON sa.client_id = c.id LEFT JOIN sale_lines sl ON sl.sale_id = sa.id
+        FROM clients c LEFT JOIN sales sa ON sa.client_id = c.id AND sa.cancelled_at IS NULL LEFT JOIN sale_lines sl ON sl.sale_id = sa.id
         WHERE c.name ILIKE ${match} OR c.city ILIKE ${match} OR COALESCE(c.contact, '') ILIKE ${match}
         GROUP BY c.id
       ) hits WHERE (${p.filter === "ship" || p.filter === "prod" || p.filter === "cli" ? p.filter : "all"} = 'all' OR hits.type = ${p.filter === "ship" || p.filter === "prod" || p.filter === "cli" ? p.filter : "all"})

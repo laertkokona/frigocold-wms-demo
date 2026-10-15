@@ -38,7 +38,11 @@ export interface Shipment {
   adjustedCount?: number;
   /** Set when this load is goods a client returned: the sale line it came from and the credit given. */
   returnOf?: { lineId: string; saleId: string; clientId: string; shipmentId: string; saleDate: string; reason: string; pricePerKg: number };
+  /** Corrections of the received kilograms, oldest first. */
+  corrections?: KgCorrection[];
 }
+
+export interface KgCorrection { kgBefore: number; kgAfter: number; docKgBefore: number | null; docKgAfter: number | null; note: string; date: string; }
 
 export type ShortageReason = "SUPPLIER" | "COUNT" | "UNRECORDED_SALE" | "DAMAGED" | "OTHER";
 export interface StockAdjustment { id: string; shipmentId: string; kg: number; qty: number | null; reason: ShortageReason; note?: string; date: string; }
@@ -47,7 +51,7 @@ export interface Draft {
   id: string;
   savedAt: string;
   productId: string;
-  data: Partial<Omit<Shipment, "id" | "soldKg" | "soldCount" | "adjustedKg" | "adjustedCount" | "returnOf">>;
+  data: Partial<Omit<Shipment, "id" | "soldKg" | "soldCount" | "adjustedKg" | "adjustedCount" | "returnOf" | "corrections">>;
 }
 
 export interface SaleLine {
