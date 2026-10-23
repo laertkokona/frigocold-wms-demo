@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { getDb } from "./db";
-import { assertAvailable, assertSaleDate, requiredStock, StockError } from "./sale-rules";
+import { assertAvailable, assertSaleDate, requiredStock } from "./sale-rules";
 
 export class DomainError extends Error {}
 /** Why stock was found missing: supplier short-loaded, counting error, sale never recorded, spoiled/damaged, other. */
@@ -281,7 +281,8 @@ export async function executeCommand(command: Command, userId: string, requestId
         if (shipments.some(s => s.cancelledAt)) throw new DomainError("Cannot sell from a cancelled load");
         const byId = new Map(shipments.map(s => [s.id, s]));
         for (const l of lines) if (byId.get(l.shipmentId)?.productId !== l.productId) throw new DomainError("Product does not match shipment");
-        for (const l of lines) if (byId.get(l.shipmentId)?.countActual == null && l.method !== "TOTAL") throw new StockError("Stock without a unit count must be sold by total kilograms");
+        // A load without a known unit count can still be sold carton by carton (individual weights or a fixed
+        // weight): the line's unit count is informative and only kilograms are checked against its stock.
         assertSaleDate(saleDate, today, shipments.map(s => s.entryDate));
         const moved = await tx.movement.groupBy({ by: ["shipmentId"], where: { shipmentId: { in: ids } }, _sum: { kg: true, qty: true } });
         const balance = new Map(moved.map(m => [m.shipmentId, { kg: m._sum.kg?.toNumber() ?? 0, qty: byId.get(m.shipmentId)?.countActual == null ? null : m._sum.qty ?? 0 }]));

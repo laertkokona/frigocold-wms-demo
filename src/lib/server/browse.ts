@@ -81,7 +81,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         UNION ALL
         SELECT sl.id, sa.date, 'OUT'::text, p.name, COALESCE(l.lots, ''), c.name,
           sl.qty, sl.kg, sl.kg * sl.price_per_kg,
-          CASE sl.method WHEN 'FIXED' THEN 'peshë fikse' WHEN 'VARIABLE' THEN 'peshë e ndryshme' WHEN 'TOTAL' THEN 'totali nga fatura' ELSE 'paleta' END
+          CASE sl.method WHEN 'FIXED' THEN 'peshë fikse' WHEN 'VARIABLE' THEN 'peshë e ndryshme' WHEN 'TOTAL' THEN 'peshë totale' ELSE 'paleta' END
         FROM sale_lines sl JOIN sales sa ON sa.id = sl.sale_id
         JOIN shipments sh ON sh.id = sl.shipment_id JOIN products p ON p.id = sh.product_id
         JOIN clients c ON c.id = sa.client_id

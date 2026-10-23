@@ -17,7 +17,7 @@ export function saleMethodLabel(l: { method: string; qty: number | null; kg: num
   if (l.method === "RETURN") return "Kthim nga klienti (kredit)";
   if (l.method === "FIXED") return `Peshë fikse (${l.fixedKg} kg × ${l.qty})`;
   if (l.method === "VARIABLE") return `Peshë e ndryshme (${l.qty} futur)`;
-  if (l.method === "TOTAL") return l.qty == null ? "Pesha totale (kg)" : `Totali nga fatura (mes. ${(l.kg / l.qty).toFixed(2)} kg/${unit === "paleta" ? "paletë" : "karton"})`;
+  if (l.method === "TOTAL") return l.qty == null ? "Pesha totale (kg)" : `Pesha totale (mes. ${(l.kg / l.qty).toFixed(2)} kg/${unit === "paleta" ? "paletë" : "karton"})`;
   return `Paleta (${l.qty})`;
 }
-export const saleMethodShort = (m: string) => m === "RETURN" ? "kthim (kredit)" : m === "FIXED" ? "peshë fikse" : m === "VARIABLE" ? "peshë e ndryshme" : m === "TOTAL" ? "totali nga fatura" : "paleta";
+export const saleMethodShort = (m: string) => m === "RETURN" ? "kthim (kredit)" : m === "FIXED" ? "peshë fikse" : m === "VARIABLE" ? "peshë e ndryshme" : m === "TOTAL" ? "peshë totale" : "paleta";

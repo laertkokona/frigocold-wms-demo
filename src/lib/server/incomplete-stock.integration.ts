@@ -180,6 +180,14 @@ async function main() {
     assert.equal((await getState()).shipments.find(s => s.id === typo)?.netKgDoc, 124.91);
     await assert.rejects(correct(back, 3), /client return/);
     await assert.rejects(correct(dupId, 3), /cancelled/);
+    // A load without a unit count can also be sold carton by carton; only kilograms are checked.
+    const byCarton = (method: "VARIABLE" | "FIXED", extra: object) => executeCommand(commandSchema.parse({ type: "finalizeSale", data: { clientId: client.id, date: today, lines: [{ productId: product.id, shipmentId: typo, method, pricePerKg: 5, ...extra }] } }), user.id, randomUUID());
+    await byCarton("VARIABLE", { qty: 2, kg: 10, weights: [5.5, 4.5] });
+    await byCarton("FIXED", { qty: 2, kg: 5, fixedKg: 2.5 });
+    await assert.rejects(byCarton("VARIABLE", { qty: 1, kg: 16, weights: [16] }), /Insufficient stock/);
+    const afterCartons = (await getState()).shipments.find(s => s.id === typo)!;
+    assert.equal(afterCartons.soldKg, 75);
+    assert.equal(afterCartons.countActual, null);
     console.log("Integration passed: migration preservation, incomplete receiving, kg-only sales, unit/kg overdraw protection, idempotency, browsing, missing-cost reporting, enrichment, immutable ledger, concurrent sales, cancelled sales and kg corrections.");
   } finally {
     shared.frigocoldDb = previous;
