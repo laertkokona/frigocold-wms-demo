@@ -64,9 +64,18 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         )
       )
     `;
+    // One row per order: a sale (all its lines), a truck received from a supplier, a return, a shortage or a
+    // correction. Each row carries its lines for the detail view; search matches any line of the order.
     case "movements": return Prisma.sql`
-      SELECT * FROM (
-        SELECT sh.id, sh.entry_date AS date, CASE WHEN sh.return_of_line_id IS NULL THEN 'IN' ELSE 'RET' END AS type, p.name AS product,
+      SELECT g.gid AS id, MIN(g.date) AS date, g.type, MAX(g.party) AS party, COUNT(*)::int AS items,
+        CASE WHEN COUNT(g.qty) = COUNT(*) THEN SUM(g.qty)::int END AS qty, SUM(g.kg) AS kg,
+        CASE WHEN COUNT(g.value) = COUNT(*) THEN SUM(g.value) END AS value,
+        STRING_AGG(DISTINCT g.product, ', ') AS products, MAX(g.ref) AS ref, MIN(g.method) AS method,
+        JSON_AGG(JSON_BUILD_OBJECT('id', g.id, 'sid', g.sid, 'product', g.product, 'lot', g.lot, 'qty', g.qty, 'kg', g.kg, 'price', g.price, 'value', g.value, 'method', g.method) ORDER BY g.product, g.kg DESC) AS lines
+      FROM (
+        -- A truck (same day, supplier and order number) is one entry; loads without a supplier stay on their own.
+        SELECT sh.id, CASE WHEN sh.return_of_line_id IS NULL AND sh.supplier_id IS NOT NULL THEN CONCAT('in:', sh.entry_date, ':', sh.supplier_id, ':', COALESCE(sh.order_nr, '')) ELSE sh.id::text END AS gid,
+          sh.id AS sid, sh.cost_per_kg AS price, sh.order_nr AS ref, sh.entry_date AS date, CASE WHEN sh.return_of_line_id IS NULL THEN 'IN' ELSE 'RET' END AS type, p.name AS product,
           COALESCE(l.lots, '') AS lot, COALESCE(rc.name, su.name) AS party, sh.count_actual AS qty,
           COALESCE(im.kg, sh.net_kg_actual) AS kg, COALESCE(im.kg, sh.net_kg_actual) * sh.cost_per_kg AS value,
           CASE WHEN sh.return_of_line_id IS NOT NULL THEN CONCAT('kthim: ', sh.return_reason)
@@ -79,7 +88,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         WHERE sh.cancelled_at IS NULL
         UNION ALL
-        SELECT sl.id, sa.date, 'OUT'::text, p.name, COALESCE(l.lots, ''), c.name,
+        SELECT sl.id, sa.id::text, sl.shipment_id, sl.price_per_kg, NULL::varchar, sa.date, 'OUT'::text, p.name, COALESCE(l.lots, ''), c.name,
           sl.qty, sl.kg, sl.kg * sl.price_per_kg,
           CASE sl.method WHEN 'FIXED' THEN 'peshë fikse' WHEN 'VARIABLE' THEN 'peshë e ndryshme' WHEN 'TOTAL' THEN 'peshë totale' ELSE 'paleta' END
         FROM sale_lines sl JOIN sales sa ON sa.id = sl.sale_id
@@ -88,7 +97,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         WHERE sa.cancelled_at IS NULL
         UNION ALL
-        SELECT sl.id, sa.date, 'ANUL'::text, p.name, COALESCE(l.lots, ''), c.name,
+        SELECT sl.id, sa.id::text, sl.shipment_id, sl.price_per_kg, NULL::varchar, sa.date, 'ANUL'::text, p.name, COALESCE(l.lots, ''), c.name,
           sl.qty, sl.kg, sl.kg * sl.price_per_kg,
           CONCAT('shitje e anuluar më ', TO_CHAR((sa.cancelled_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Tirane', 'DD/MM/YYYY'), ' — ', sa.cancel_reason)
         FROM sale_lines sl JOIN sales sa ON sa.id = sl.sale_id
@@ -97,7 +106,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         WHERE sa.cancelled_at IS NOT NULL
         UNION ALL
-        SELECT k.id, k.date, 'KOR'::text, p.name, COALESCE(l.lots, ''), su.name,
+        SELECT k.id, k.id::text, k.shipment_id, sh.cost_per_kg, NULL::varchar, k.date, 'KOR'::text, p.name, COALESCE(l.lots, ''), su.name,
           NULL::int, k.kg_after - k.kg_before, (k.kg_after - k.kg_before) * sh.cost_per_kg,
           CONCAT('korrigjim i kg: ', TRIM(TO_CHAR(k.kg_before, 'FM999999990.999'), '.'), ' → ', TRIM(TO_CHAR(k.kg_after, 'FM999999990.999'), '.'), ' kg — ', k.note)
         FROM shipment_corrections k JOIN shipments sh ON sh.id = k.shipment_id JOIN products p ON p.id = sh.product_id
@@ -105,7 +114,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         WHERE sh.cancelled_at IS NULL
         UNION ALL
-        SELECT a.id, a.date, 'ADJ'::text, p.name, COALESCE(l.lots, ''), NULL::varchar,
+        SELECT a.id, a.id::text, a.shipment_id, sh.cost_per_kg, NULL::varchar, a.date, 'ADJ'::text, p.name, COALESCE(l.lots, ''), NULL::varchar,
           a.qty, a.kg, a.kg * sh.cost_per_kg,
           CONCAT('mungesë: ', CASE a.reason WHEN 'SUPPLIER' THEN 'furnizuesi ngarkoi më pak' WHEN 'COUNT' THEN 'gabim në numërim'
             WHEN 'UNRECORDED_SALE' THEN 'shitje e paregjistruar' WHEN 'DAMAGED' THEN 'i dëmtuar / i prishur' ELSE 'tjetër' END,
@@ -113,8 +122,9 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         FROM stock_adjustments a JOIN shipments sh ON sh.id = a.shipment_id JOIN products p ON p.id = sh.product_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         WHERE sh.cancelled_at IS NULL
-      ) m WHERE (${MOVEMENT_TYPES.includes(p.filter) ? p.filter : "ALL"} = 'ALL' OR m.type = ${MOVEMENT_TYPES.includes(p.filter) ? p.filter : "ALL"})
-        AND (m.product ILIKE ${match} OR m.lot ILIKE ${match} OR m.party ILIKE ${match} OR m.method ILIKE ${match})
+      ) g WHERE (${MOVEMENT_TYPES.includes(p.filter) ? p.filter : "ALL"} = 'ALL' OR g.type = ${MOVEMENT_TYPES.includes(p.filter) ? p.filter : "ALL"})
+      GROUP BY g.gid, g.type
+      HAVING BOOL_OR(g.product ILIKE ${match} OR g.lot ILIKE ${match} OR g.party ILIKE ${match} OR g.method ILIKE ${match} OR COALESCE(g.ref, '') ILIKE ${match})
     `;
     case "search": return Prisma.sql`
       SELECT * FROM (

@@ -188,6 +188,19 @@ async function main() {
     const afterCartons = (await getState()).shipments.find(s => s.id === typo)!;
     assert.equal(afterCartons.soldKg, 75);
     assert.equal(afterCartons.countActual, null);
+    // Lëvizjet lists orders: a truck (same day, supplier, order no.) is one entry and a sale is one row, each with its lines.
+    const truck = { productId: product.id, supplierId: supplier.id, orderNr: "TRUCK-7", netKgActual: 10, expFrom: "2027-01-01", entryDate: today };
+    const t1 = String((await receive(truck)).id), t2 = String((await receive({ ...truck, netKgActual: 15 })).id);
+    const truckRows = await browse({ ...params, kind: "movements", filter: "IN", q: "TRUCK-7" });
+    assert.equal(truckRows.total, 1);
+    assert.equal(truckRows.items[0].items, 2);
+    assert.equal(truckRows.items[0].kg, 25);
+    const twoLines = String((await executeCommand(commandSchema.parse({ type: "finalizeSale", data: { clientId: client.id, date: today, lines: [t1, t2].map(shipmentId => ({ productId: product.id, shipmentId, method: "TOTAL", qty: null, kg: 4, pricePerKg: 5 })) } }), user.id, randomUUID())).id);
+    const saleRow = (await browse({ ...params, kind: "movements", filter: "OUT", pageSize: 100 })).items.find(r => r.id === twoLines)!;
+    assert.equal(saleRow.items, 2);
+    assert.equal(saleRow.kg, 8);
+    assert.equal(saleRow.value, 40);
+    assert.equal((saleRow.lines as unknown[]).length, 2);
     console.log("Integration passed: migration preservation, incomplete receiving, kg-only sales, unit/kg overdraw protection, idempotency, browsing, missing-cost reporting, enrichment, immutable ledger, concurrent sales, cancelled sales and kg corrections.");
   } finally {
     shared.frigocoldDb = previous;

@@ -79,3 +79,7 @@ Receiving and sale requests carry an idempotency key so a repeat request after a
 ## Kg sold per month (no migration)
 
 - Financa has a "Sipas muajve" tab: one row per calendar month from the first sale to now (independent of the period switch), with orders, kg sold (excluding client returns), kg returned, revenue and gross profit net of returns, and margin; each month expands to a per-product breakdown, with CSV export. Computed by `salesByMonth` in `src/lib/accounting.ts` and returned as `byMonth` by `/api/accounting`. Cancelled sales are excluded as everywhere else.
+
+## Lëvizjet grouped by order (no migration)
+
+- The movements browse now returns one row per order instead of one per line: a sale (`gid` = sale id) with all its lines, a truck received from a supplier (same entry date, supplier and order number) with all its loads, and returns, shortages and kg corrections as single rows. Each row carries `items`, summed `qty`/`kg`/`value` (value is null if any line's cost is unknown), the product list, the order number (`ref`) and its `lines` (JSON) for the expandable detail. Type filters apply per line; search matches an order when any of its lines matches. Loads without a supplier are not grouped.
