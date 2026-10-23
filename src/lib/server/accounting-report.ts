@@ -1,4 +1,4 @@
-import { buildPeriod, capitalAtRisk, clientRows, headline, lotRows, monthlyEcon, priceDispersion, priceSeries, productRows, supplierRows, trailingMonths, type PeriodKey } from "@/lib/accounting";
+import { buildPeriod, capitalAtRisk, clientRows, headline, lotRows, monthlyEcon, priceDispersion, priceSeries, productRows, salesByMonth, supplierRows, trailingMonths, type PeriodKey } from "@/lib/accounting";
 import { getState } from "./state";
 import { sumCosts } from "@/lib/costs";
 
@@ -13,6 +13,7 @@ export async function getAccountingReport(period: PeriodKey, selectedProduct: st
     p, cur: headline(sales, shipments, p.from, p.to, adjustments), prev: headline(sales, shipments, p.prevFrom, p.prevTo, adjustments),
     missingCostShipmentCount: shipments.filter(s => s.costPerKg == null).length,
     series: monthlyEcon(sales, shipments, months),
+    byMonth: salesByMonth(sales, shipments, products),
     prods: productRows(products, sales, shipments, p),
     clis: clientRows(clients, sales, shipments, p),
     sups: supplierRows(suppliers, shipments, sales, p),

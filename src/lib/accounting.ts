@@ -93,6 +93,30 @@ export function monthlyEcon(sales: Sale[], shipments: Shipment[], months: string
   });
 }
 
+/* ---------- sales by month ---------- */
+export interface MonthProductRow { id: string; name: string; kg: number; returnsKg: number; revenue: number; profit: number | null; }
+export interface MonthSalesRow { m: string; label: string; orders: number; kg: number; returnsKg: number; revenue: number; cogs: number | null; profit: number | null; margin: number | null; missingCostKg: number; products: MonthProductRow[]; }
+/** One row per calendar month from the first sale to the current month (newest first): kg sold (as it left the
+ *  warehouse), kg returned by clients, and revenue/profit net of those returns, with a per-product breakdown. */
+export function salesByMonth(sales: Sale[], shipments: Shipment[], products: Product[]): MonthSalesRow[] {
+  if (!sales.length) return [];
+  const first = sales.reduce((m, s) => (s.date < m ? s.date : m), sales[0].date);
+  return monthsBetween(first, todayInTirane(), 400).reverse().map(m => {
+    const ms = sales.filter(s => s.date.slice(0, 7) === m);
+    const lines = ms.flatMap(s => s.lines.map(l => ({ ...l, date: s.date })));
+    const outKg = (ls: typeof lines) => ls.filter(l => l.method !== "RETURN").reduce((a, l) => a + l.kg, 0);
+    const backKg = (ls: typeof lines) => -ls.filter(l => l.method === "RETURN").reduce((a, l) => a + l.kg, 0);
+    const e = econOf(lines, shipments);
+    const byProduct = products.flatMap(p => {
+      const pl = lines.filter(l => l.productId === p.id);
+      if (!pl.length) return [];
+      const pe = econOf(pl, shipments);
+      return [{ id: p.id, name: p.name, kg: outKg(pl), returnsKg: backKg(pl), revenue: pe.revenue, profit: pe.profit }];
+    }).sort((a, b) => b.kg - a.kg);
+    return { m, label: `${MONTHS[+m.slice(5) - 1]} ${m.slice(0, 4)}`, orders: ms.filter(s => !s.isReturn).length, kg: outKg(lines), returnsKg: backKg(lines), revenue: e.revenue, cogs: e.cogs, profit: e.profit, margin: e.margin, missingCostKg: e.missingCostKg, products: byProduct };
+  });
+}
+
 /* ---------- products ---------- */
 export interface ProductRow extends Econ { product: Product; avgSell: number; avgCost: number | null; spread: number | null; profitShare: number | null; prevKg: number; prevRevenue: number; prevMargin: number | null; }
 export function productRows(products: Product[], sales: Sale[], shipments: Shipment[], p: Period): ProductRow[] {

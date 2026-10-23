@@ -75,3 +75,7 @@ Receiving and sale requests carry an idempotency key so a repeat request after a
 
 - Dalje always shows the weighing choice for the chosen load: fixed weight per carton, each carton's/pallet's weight, or only the unit count and total kg (`TOTAL`). Previously loads without a unit count went straight to `TOTAL` and fixed-weight loads did not offer `TOTAL`.
 - `finalizeSale` no longer rejects `FIXED`/`VARIABLE`/`PALLET` lines on a load whose unit count is unknown. The line's count is informative; only kilograms are checked against that load's stock (loads with a known count still enforce both). No schema change.
+
+## Kg sold per month (no migration)
+
+- Financa has a "Sipas muajve" tab: one row per calendar month from the first sale to now (independent of the period switch), with orders, kg sold (excluding client returns), kg returned, revenue and gross profit net of returns, and margin; each month expands to a per-product breakdown, with CSV export. Computed by `salesByMonth` in `src/lib/accounting.ts` and returned as `byMonth` by `/api/accounting`. Cancelled sales are excluded as everywhere else.
