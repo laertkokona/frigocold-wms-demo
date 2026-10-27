@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { ArrowLeft, Check, ChevronRight, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DecimalInput, Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Banner } from "@/components/ui/banner";
 import { Segmented } from "@/components/ui/segmented";
@@ -101,7 +101,7 @@ export default function KthimPage() {
               return (
                 <button key={l.lineId} disabled={full} onClick={() => pickLine(l.lineId!)} className={cn("flex w-full items-center justify-between rounded-lg border bg-card px-4 py-3 text-left text-sm hover:border-entry/60", full && "cursor-not-allowed opacity-50")}>
                   <div><div className="font-medium">{pname(l.productId)} · {s ? shipmentLabel(s) : "—"}</div>
-                    <div className="text-xs text-muted-foreground">Shitur {fmtDate(l.date)} · {fmtKg(l.kg)}{l.qty != null ? ` · ${l.qty} ${s?.loadType === "PALLET" ? "paleta" : "kartona"}` : ""} · {fmtNum(l.pricePerKg)} Lek/kg{l.backKg > 0 ? ` · kthyer tashmë ${fmtKg(l.backKg)}` : ""}</div></div>
+                    <div className="text-xs text-muted-foreground">Shitur {fmtDate(l.date)} · {fmtKg(l.kg)}{l.qty != null ? ` · ${l.qty} ${s?.loadType === "PALLET" ? "paleta" : "kartona"}` : ""} · {fmtNum(l.pricePerKg, 2)} Lek/kg{l.backKg > 0 ? ` · kthyer tashmë ${fmtKg(l.backKg)}` : ""}</div></div>
                   {full ? <span className="text-xs text-muted-foreground">kthyer plotësisht</span> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                 </button>); })}
           </div>
@@ -120,19 +120,19 @@ export default function KthimPage() {
                 <Row k="Prodhimi" v={original.prodFrom ? fmtDate(original.prodFrom) + (original.prodTo ? ` – ${fmtDate(original.prodTo)}` : "") : "—"} />
                 <Row k="Skadimi" v={fmtDate(original.expFrom) + (original.expTo ? ` – ${fmtDate(original.expTo)}` : "")} />
                 <Row k="Kosto / kg" v={original.costPerKg == null ? "e panjohur" : `${fmtNum(original.costPerKg, 2)} Lek`} />
-                <Row k="Shitur në këtë rresht" v={`${fmtKg(line.kg)}${line.qty != null ? ` · ${line.qty} ${unit}` : ""} · ${fmtNum(line.pricePerKg)} Lek/kg`} />
+                <Row k="Shitur në këtë rresht" v={`${fmtKg(line.kg)}${line.qty != null ? ` · ${line.qty} ${unit}` : ""} · ${fmtNum(line.pricePerKg, 2)} Lek/kg`} />
                 {line.backKg > 0 && <Row k="Kthyer më parë" v={fmtKg(line.backKg)} />}
               </> : <p className="text-muted-foreground">Ngarkesa origjinale nuk u gjet.</p>}
             </div>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>Kg të kthyera <span className="text-danger">*</span></Label><Input type="number" inputMode="decimal" step="0.001" value={kg} onChange={e => { requestId.current = null; setKg(e.target.value); }} className="h-12 text-lg font-semibold" /><p className="mt-1 text-[11px] text-muted-foreground">maks. {fmtKg(line.maxKg)}</p></div>
+                <div><Label>Kg të kthyera <span className="text-danger">*</span></Label><DecimalInput value={kg} onChange={e => { requestId.current = null; setKg(e.target.value); }} className="h-12 text-lg font-semibold" /><p className="mt-1 text-[11px] text-muted-foreground">maks. {fmtKg(line.maxKg)}</p></div>
                 <div><Label>Numri i {unit === "paleta" ? "paletave" : "kartonave"} <span className="text-[10px] font-normal text-muted-foreground">(nëse dihet)</span></Label><Input type="number" inputMode="numeric" step="1" min="1" value={qty} onChange={e => { requestId.current = null; setQty(e.target.value); }} className="h-12 text-lg font-semibold" />{line.maxQty != null && <p className="mt-1 text-[11px] text-muted-foreground">maks. {line.maxQty}</p>}</div>
               </div>
               <div><Label>Arsyeja</Label><Segmented value={reason} onChange={v => { requestId.current = null; setReason(v); }} options={REASONS} />
                 <Input className="mt-2" value={note} onChange={e => { requestId.current = null; setNote(e.target.value); }} placeholder={reason === "Tjetër" ? "Shkruaj arsyen" : "Shënim (opsional), p.sh. kartonë të shkrirë"} maxLength={150} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>Kreditimi për klientin (Lek/kg)</Label><Input type="number" step="0.01" min="0" value={price} onChange={e => { requestId.current = null; setPrice(e.target.value); }} /><p className="mt-1 text-[11px] text-muted-foreground">Çmimi i shitjes: {fmtNum(line.pricePerKg)} Lek/kg</p></div>
+                <div><Label>Kreditimi për klientin (Lek/kg)</Label><DecimalInput value={price} onChange={e => { requestId.current = null; setPrice(e.target.value); }} /><p className="mt-1 text-[11px] text-muted-foreground">Çmimi i shitjes: {fmtNum(line.pricePerKg, 2)} Lek/kg</p></div>
                 <div><Label>Data e kthimit</Label><Input type="date" value={date} min={line.date} max={today} onChange={e => { requestId.current = null; setDate(e.target.value); }} /></div>
               </div>
               <div className="rounded-lg bg-entry/10 p-4 text-sm text-entry tabular">

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DecimalInput, Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useStore } from "@/lib/store";
@@ -42,7 +42,7 @@ export function ShipmentDetailsDialog({ shipment, open, onClose, firstSaleDate }
       <div><Label htmlFor="shipment-entry">Data e hyrjes</Label><Input id="shipment-entry" type="date" max={maxEntry} value={entryDate} onChange={event => setEntryDate(event.target.value)} />{dateError ? <p role="alert" className="mt-1 text-xs text-danger">{dateError}</p> : entryDate !== originalEntry && <p className="mt-1 text-xs text-warn">Ngarkesa do të llogaritet si e hyrë më këtë datë.</p>}</div>
       <div><Label>Furnizuesi (opsional)</Label><Select value={supplierId || "__unknown"} onValueChange={value => setSupplierId(value === "__unknown" ? "" : value)}><SelectTrigger aria-label="Furnizuesi"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__unknown">Pa furnizues</SelectItem>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select></div>
       <div><Label htmlFor="shipment-order">Nr. i porosisë (opsional)</Label><Input id="shipment-order" maxLength={100} value={orderNr} onChange={event => setOrderNr(event.target.value)} /></div>
-      <div><Label htmlFor="shipment-cost">Kosto / kg në Lek (opsionale)</Label><Input id="shipment-cost" type="number" step="0.0001" min="0.0001" value={cost} onChange={event => setCost(event.target.value)} placeholder="E panjohur" />{!validCost && <p role="alert" className="mt-1 text-xs text-danger">Kostoja duhet të jetë pozitive ose bosh.</p>}</div>
+      <div><Label htmlFor="shipment-cost">Kosto / kg në Lek (opsionale)</Label><DecimalInput id="shipment-cost" value={cost} onChange={event => setCost(event.target.value)} placeholder="E panjohur" />{!validCost && <p role="alert" className="mt-1 text-xs text-danger">Kostoja duhet të jetë pozitive ose bosh.</p>}</div>
       <Button className="w-full" disabled={saving || !validCost || !!dateError} onClick={save}>{saving ? "Po ruhet…" : "Ruaj të dhënat"}</Button>
     </div>
   </DialogContent></Dialog>;

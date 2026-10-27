@@ -36,7 +36,7 @@ export default function ProductDetail() {
         <Link key={s.id} href={`/inventari/${s.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-sm hover:bg-accent/40">
           <div><div className="font-medium">{suppliers.find(x => x.id === s.supplierId)?.name ?? "—"} · {s.lots.length ? `Lot ${s.lots.map(l => l.lotNumber).join(", ")}` : "Pa lot"}<IncompleteShipment shipment={s} /></div>
             <div className="text-xs text-muted-foreground">{loadSpecLabel(s)}</div>
-            <div className="text-xs text-muted-foreground">Porosia {s.orderNr ?? "—"} · hyri {fmtDate(s.entryDate)} · {s.countActual == null ? "sasi e panjohur" : `${remainingCount(s)} / ${s.countActual} ${unit}`} · {fmtNum(s.costPerKg)} Lek/kg</div></div>
+            <div className="text-xs text-muted-foreground">Porosia {s.orderNr ?? "—"} · hyri {fmtDate(s.entryDate)} · {s.countActual == null ? "sasi e panjohur" : `${remainingCount(s)} / ${s.countActual} ${unit}`} · {fmtNum(s.costPerKg, 2)} Lek/kg</div></div>
           <div className="flex items-center gap-3"><span className="text-right tabular">{rem > 0 ? fmtKg(rem, 0) : <span className="text-xs text-muted-foreground">shitur</span>}</span>{rem > 0 && <Badge variant={d < 60 ? "danger" : d < 180 ? "warn" : "entry"}>{d < 0 ? "skaduar" : fmtMonth(s.expFrom)}</Badge>}</div>
         </Link>); })}
       {!loads.length && <p className="text-sm text-muted-foreground">Asnjë ngarkesë ende. Shtyp &quot;Ngarkesë e re&quot; për të regjistruar të parën.</p>}

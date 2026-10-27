@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/shell";
 import { IncompleteShipment } from "@/components/incomplete-shipment";
 import { ShipmentDetailsDialog } from "@/components/shipment-details-dialog";
 import { SHORTAGE_LABELS, shipmentLabel } from "@/lib/stock";
-import { Input } from "@/components/ui/input";
+import { DecimalInput, Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ShortageReason } from "@/lib/types";
 import { cn, todayInTirane } from "@/lib/utils";
@@ -42,7 +42,7 @@ export default function ShipmentDetail() {
     <>
       <PageHeader title={`${shipmentLabel(s)} · ${p?.name}`} sub={s.returnOf ? `Kthim nga ${clients.find(c => c.id === s.returnOf!.clientId)?.name ?? "klienti"} · ${fmtDate(s.entryDate)}` : `Porosia ${s.orderNr ?? "—"} · ${sup?.name ?? "Pa furnizues"}`} right={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setEdit(true)}>Ndrysho të dhënat</Button>{!s.returnOf && <Button variant="outline" onClick={() => setCorrect(true)}><Scale /> Korrigjo kg</Button>}{remainingKg(s) > 0 && <Button variant="outline" onClick={() => setShort(true)}><PackageX /> Regjistro mungesë</Button>}{out.length === 0 && shortages.length === 0 && <Button variant="warn" onClick={() => setCancel(true)}><Trash2 /> Anulo ngarkesën</Button>}<Button asChild variant="ghost"><Link href={`/produktet/${s.productId}`}><ArrowLeft /> {p?.name ?? "Stoku"}</Link></Button></div>} />
       <div className="mb-4"><IncompleteShipment shipment={s} />{s.countActual == null && <p className="mt-2 text-sm text-muted-foreground">Stoku ndiqet vetëm në kg; numri i njësive nuk dihet.</p>}{s.costPerKg == null && <p className="mt-2 text-sm text-warn">Kostoja nuk dihet. Vlera e stokut dhe fitimi janë të paplotë.</p>}</div>
-      {s.returnOf && <Banner className="mb-4"><Undo2 className="mr-1 inline h-3.5 w-3.5" /><b>Kthim nga {clients.find(c => c.id === s.returnOf!.clientId)?.name ?? "klienti"}</b> — shitur më {fmtDate(s.returnOf.saleDate)}{origin ? <> nga <Link className="underline" href={`/inventari/${origin.id}`}>{shipmentLabel(origin)}</Link></> : null}. Arsyeja: {s.returnOf.reason || "—"}. Kredituar {fmtNum(s.returnOf.pricePerKg)} Lek/kg.</Banner>}
+      {s.returnOf && <Banner className="mb-4"><Undo2 className="mr-1 inline h-3.5 w-3.5" /><b>Kthim nga {clients.find(c => c.id === s.returnOf!.clientId)?.name ?? "klienti"}</b> — shitur më {fmtDate(s.returnOf.saleDate)}{origin ? <> nga <Link className="underline" href={`/inventari/${origin.id}`}>{shipmentLabel(origin)}</Link></> : null}. Arsyeja: {s.returnOf.reason || "—"}. Kredituar {fmtNum(s.returnOf.pricePerKg, 2)} Lek/kg.</Banner>}
       <ShortageDialog open={short} onClose={() => setShort(false)} shipmentId={s.id} remainingKg={remainingKg(s)} remainingCount={remainingCount(s)} unit={unit} minDate={s.entryDate} />
       <CorrectKgDialog open={correct} onClose={() => setCorrect(false)} shipmentId={s.id} netKgActual={s.netKgActual} netKgDoc={s.netKgDoc} leftKg={s.netKgActual - remainingKg(s)} />
       <ShipmentDetailsDialog shipment={s} open={edit} onClose={() => setEdit(false)} firstSaleDate={out.length ? out[out.length - 1].date : undefined} />
@@ -53,13 +53,13 @@ export default function ShipmentDetail() {
           <Row k="Data e hyrjes" v={fmtDate(s.entryDate)} /><Row k="Pesha" v={s.loadType === "PALLET" ? "Paleta" : s.fixedKg ? `Kartona me peshë fikse ${s.fixedKg} kg` : "Kartona me peshë të ndryshme"} />
           {s.origin && <Row k="Origjina" v={s.origin} />}{s.specs && <Row k="Specifikime" v={s.specs} />}
           <Row k="Sasia (dokument / faktik)" v={<span>{s.countDoc ?? "—"} / {s.countActual ?? "e panjohur"} {unit}{s.countDoc != null && s.countActual != null && s.countDoc !== s.countActual && <Badge variant="warn" className="ml-2">{s.countActual - s.countDoc > 0 ? "+" : ""}{s.countActual - s.countDoc}</Badge>}</span>} />
-          <Row k="Pesha (dokument / faktike)" v={<span>{fmtNum(s.netKgDoc, 1)} / {fmtNum(s.netKgActual, 1)} kg{s.netKgDoc != null && s.netKgDoc !== s.netKgActual && <Badge variant="warn" className="ml-2">{(s.netKgActual - s.netKgDoc).toFixed(1)} kg</Badge>}</span>} />
+          <Row k="Pesha (dokument / faktike)" v={<span>{fmtNum(s.netKgDoc, 3)} / {fmtNum(s.netKgActual, 3)} kg{s.netKgDoc != null && s.netKgDoc !== s.netKgActual && <Badge variant="warn" className="ml-2">{fmtNum(s.netKgActual - s.netKgDoc, 3)} kg</Badge>}</span>} />
           <Row k="Lotet" v={s.lots.map(l => `${l.lotNumber} (${l.qty})`).join(", ")} />
           <Row k="Prodhimi" v={!s.prodFrom ? "—" : s.dateMode === "RANGE" && s.prodTo ? `${fmtDate(s.prodFrom)} – ${fmtDate(s.prodTo)}` : fmtDate(s.prodFrom)} />
           <Row k="Skadimi" v={s.dateMode === "RANGE" && s.expTo ? `${fmtDate(s.expFrom)} – ${fmtDate(s.expTo)} (më e hershmja vlen)` : fmtDate(s.expFrom)} />
         </CardContent></Card>
         <Card><CardHeader><CardTitle>Stoku dhe vlera</CardTitle></CardHeader><CardContent>
-          <Row k="Kosto / kg" v={fmtNum(s.costPerKg) + " Lek"} /><Row k="Vlera totale e dërgesës" v={fmtLek(s.totalCost)} />
+          <Row k="Kosto / kg" v={fmtNum(s.costPerKg, 2) + " Lek"} /><Row k="Vlera totale e dërgesës" v={fmtLek(s.totalCost)} />
           <Row k="Mbetur" v={<span className="text-entry">{fmtKg(remainingKg(s), 1)} · {remainingCount(s) == null ? "sasi e panjohur" : `${remainingCount(s)} ${unit}`}</span>} />
           <Row k="Shitur" v={`${fmtKg(s.soldKg, 1)}${s.countActual == null ? "" : ` · ${s.soldCount} ${unit}`}`} />
           {netKg < s.soldKg - 0.0005 && <Row k="Kthyer nga klientët" v={fmtKg(s.soldKg - netKg, 1)} />}
@@ -76,7 +76,7 @@ export default function ShipmentDetail() {
       </CardContent></Card>}
       <Card className="mt-4"><CardHeader><CardTitle>Historia e daljeve</CardTitle></CardHeader><CardContent>
         {out.length === 0 && <p className="text-sm text-muted-foreground">Asnjë shitje ende nga ky lot.</p>}
-        {out.map((l, i) => <div key={i} className="flex flex-wrap items-center justify-between gap-2 border-b py-2.5 text-sm last:border-0"><div><div className="font-medium">{l.method === "RETURN" ? l.client : <Link className="hover:underline" href={`/klientet/${l.clientId}`}>{l.client}</Link>}</div><div className="text-xs text-muted-foreground">{fmtDate(l.date)} · {l.qty == null ? "sasi e panjohur" : `${l.qty} ${unit}`} · {saleMethodShort(l.method)}</div></div><div className="text-right tabular"><div>{fmtKg(l.kg)}</div><div className="text-xs text-muted-foreground">{fmtNum(l.pricePerKg)} Lek/kg · {fmtLek(l.total)}</div></div></div>)}
+        {out.map((l, i) => <div key={i} className="flex flex-wrap items-center justify-between gap-2 border-b py-2.5 text-sm last:border-0"><div><div className="font-medium">{l.method === "RETURN" ? l.client : <Link className="hover:underline" href={`/klientet/${l.clientId}`}>{l.client}</Link>}</div><div className="text-xs text-muted-foreground">{fmtDate(l.date)} · {l.qty == null ? "sasi e panjohur" : `${l.qty} ${unit}`} · {saleMethodShort(l.method)}</div></div><div className="text-right tabular"><div>{fmtKg(l.kg)}</div><div className="text-xs text-muted-foreground">{fmtNum(l.pricePerKg, 2)} Lek/kg · {fmtLek(l.total)}</div></div></div>)}
       </CardContent></Card>
     </>
   );
@@ -125,7 +125,7 @@ function ShortageDialog({ open, onClose, shipmentId, remainingKg: maxKg, remaini
     <DialogDescription>Për mall që nuk ndodhet fizikisht në frigorifer. Hiqet nga stoku dhe llogaritet si humbje te Financa. Regjistrimi mbetet në histori.</DialogDescription>
     <div className="mt-4 space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        <div><Label>Kg që mungojnë</Label><Input type="number" step="0.001" min="0.001" value={kg} onChange={e => { requestId.current = null; setKg(e.target.value); }} /><button type="button" className="mt-1 text-[11px] text-entry underline" onClick={() => { requestId.current = null; setKg(String(maxKg)); setQty(maxCount ? String(maxCount) : ""); }}>e gjithë mbetja ({fmtKg(maxKg)})</button></div>
+        <div><Label>Kg që mungojnë</Label><DecimalInput value={kg} onChange={e => { requestId.current = null; setKg(e.target.value); }} /><button type="button" className="mt-1 text-[11px] text-entry underline" onClick={() => { requestId.current = null; setKg(String(maxKg)); setQty(maxCount ? String(maxCount) : ""); }}>e gjithë mbetja ({fmtKg(maxKg)})</button></div>
         <div><Label>Numri i {unit === "paleta" ? "paletave" : "kartonave"} <span className="text-[10px] font-normal text-muted-foreground">(nëse dihet)</span></Label><Input type="number" step="1" min="1" disabled={maxCount == null} value={qty} onChange={e => { requestId.current = null; setQty(e.target.value); }} placeholder={maxCount == null ? "sasi e panjohur" : `maks. ${maxCount}`} /></div>
       </div>
       <div><Label>Arsyeja</Label>
@@ -160,7 +160,7 @@ function CorrectKgDialog({ open, onClose, shipmentId, netKgActual, netKgDoc, lef
     <div className="mt-4 space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <div><Label>Kg aktuale në sistem</Label><Input value={fmtNum(netKgActual, 3)} disabled /></div>
-        <div><Label>Kg të sakta</Label><Input type="number" step="0.001" min={min} value={kg} onChange={e => setKg(e.target.value)} /></div>
+        <div><Label>Kg të sakta</Label><DecimalInput value={kg} onChange={e => setKg(e.target.value)} /></div>
       </div>
       {!err && <p className="text-sm">Ndryshimi: <b className={delta > 0 ? "text-entry" : "text-warn"}>{delta > 0 ? "+" : "−"}{fmtKg(Math.abs(delta))}</b> · mbetet në stok {fmtKg(n - leftKg)}</p>}
       {netKgDoc != null && <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5" checked={updateDoc} onChange={e => setUpdateDoc(e.target.checked)} /><span>Korrigjo edhe peshën e dokumentit ({fmtNum(netKgDoc, 3)} kg)<span className="block text-xs text-muted-foreground">Lëre bosh nëse dokumenti i furnizuesit ishte i saktë dhe gabimi ishte vetëm te pesha faktike.</span></span></label>}

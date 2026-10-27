@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, CalendarCheck, Check, ChevronRight, ClipboardList, Plus, Save, Search, Trash2, X, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DecimalInput, Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Banner } from "@/components/ui/banner";
@@ -179,10 +179,10 @@ export default function HyrjePage() {
             <div className="max-w-sm"><Label>Si vjen ngarkesa?</Label><Segmented value={form.loadType} onChange={v => set({ loadType: v })} options={[{ value: "CARTON", label: "Kartona" }, { value: "PALLET", label: "Paleta" }]} /><Hint>{form.loadType === "CARTON" ? "Produkt i ndarë në kartona individuale" : "Produkt i pandashëm — vjen mbi paleta me peshë totale"}</Hint></div>
             {form.loadType === "CARTON" && <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div><Label>Pesha e kartonave</Label><Segmented value={form.weighMode} onChange={v => set({ weighMode: v })} options={[{ value: "VARIABLE", label: "E ndryshme" }, { value: "FIXED", label: "Fikse" }]} /><Hint>{form.weighMode === "FIXED" ? "Çdo karton ka të njëjtën peshë — shitja bëhet me numër kartonash." : "Çdo karton ka peshë tjetër — shitja bëhet me peshat e kartonave ose me totalin nga fatura."}</Hint></div>
-              {form.weighMode === "FIXED" && <div><Label>Kg për karton <Req /></Label><Input type="number" step="0.001" value={form.fixedKg} onChange={e => set({ fixedKg: e.target.value })} placeholder="p.sh. 10" />{fixedKg > 0 && cntAct > 0 && Math.abs(fixedKg * cntAct - wAct) > 0.01 && <Hint className="text-warn">{cntAct} × {fixedKg} kg = {fmtNum(fixedKg * cntAct, 2)} kg, ndërsa pesha neto është {fmtNum(wAct, 2)} kg.</Hint>}</div>}
+              {form.weighMode === "FIXED" && <div><Label>Kg për karton <Req /></Label><DecimalInput value={form.fixedKg} onChange={e => set({ fixedKg: e.target.value })} placeholder="p.sh. 10" />{fixedKg > 0 && cntAct > 0 && Math.abs(fixedKg * cntAct - wAct) > 0.01 && <Hint className="text-warn">{cntAct} × {fixedKg} kg = {fmtNum(fixedKg * cntAct, 3)} kg, ndërsa pesha neto është {fmtNum(wAct, 3)} kg.</Hint>}</div>}
             </div>}
             <DualField label={`Numri i ${unit} (opsional)`} doc={form.countDoc} act={form.countActual} onDoc={v => set({ countDoc: v, ...(v.trim() ? { countActual: v } : {}) })} onAct={v => set({ countActual: v })} diff={form.countDoc.trim() && form.countActual.trim() ? cntAct - cntDoc : null} fmt={d => `${d > 0 ? "+" : ""}${d}`} />
-            <DualField label="Pesha neto totale (kg) — dokumenti opsional" doc={form.netKgDoc} act={form.netKgActual} onDoc={v => set({ netKgDoc: v, ...(v.trim() ? { netKgActual: v } : {}) })} onAct={v => set({ netKgActual: v })} diff={form.netKgDoc.trim() ? +(wAct - wDoc).toFixed(2) : null} fmt={d => `${d > 0 ? "+" : ""}${d.toFixed(2)} kg`} step="0.01" hint={avg > 0 ? `Mesatarisht ${avg.toFixed(2)} kg / ${form.loadType === "CARTON" ? "karton" : "paletë"}` : undefined} />
+            <DualField label="Pesha neto totale (kg) — dokumenti opsional" doc={form.netKgDoc} act={form.netKgActual} onDoc={v => set({ netKgDoc: v, ...(v.trim() ? { netKgActual: v } : {}) })} onAct={v => set({ netKgActual: v })} diff={form.netKgDoc.trim() ? +(wAct - wDoc).toFixed(3) : null} fmt={d => `${d > 0 ? "+" : ""}${fmtNum(d, 3)} kg`} step="0.01" hint={avg > 0 ? `Mesatarisht ${fmtNum(avg, 2)} kg / ${form.loadType === "CARTON" ? "karton" : "paletë"}` : undefined} />
           </Section>
 
           <Section n={3} title="Specifikimet e ngarkesës">
@@ -214,7 +214,7 @@ export default function HyrjePage() {
           <Section n={5} title="Kosto (opsionale)">
             <div className="grid gap-4 sm:grid-cols-2">
               <div><Label>Njësia e kostos</Label><Segmented value={form.costUnit} onChange={v => set({ costUnit: v })} options={[{ value: "kg", label: "për kg" }, { value: "ton", label: "për ton" }]} /></div>
-              <div><Label>Kosto totale {form.costUnit === "kg" ? "për kg" : "për ton"} (Lek)</Label><Input type="number" value={form.costVal} onChange={e => set({ costVal: e.target.value })} placeholder={form.costUnit === "kg" ? "p.sh. 340" : "p.sh. 340000"} /><Hint>Përfshin transportin, doganën etj. — dhënë nga financa. Lëre bosh kur kostoja nuk dihet; vlera e stokut dhe fitimi do të shënohen si të paplotë.</Hint></div>
+              <div><Label>Kosto totale {form.costUnit === "kg" ? "për kg" : "për ton"} (Lek)</Label><DecimalInput value={form.costVal} onChange={e => set({ costVal: e.target.value })} placeholder={form.costUnit === "kg" ? "p.sh. 340" : "p.sh. 340000"} /><Hint>Përfshin transportin, doganën etj. — dhënë nga financa. Lëre bosh kur kostoja nuk dihet; vlera e stokut dhe fitimi do të shënohen si të paplotë.</Hint></div>
             </div>
             <div className="mt-3 rounded-lg bg-secondary p-4">
               <Row k="Pesha neto faktike" v={fmtKg(wAct)} /><Row k="Kosto për kg" v={form.costVal.trim() ? fmtNum(perKg, 2) + " Lek" : "E panjohur"} />
@@ -249,7 +249,7 @@ export default function HyrjePage() {
           <PageHeader title="Verifiko dërgesën" sub="Hapi 3 nga 3" right={<Button variant="ghost" onClick={() => setStep("form")}><ArrowLeft /> Ndrysho</Button>} />
           <div className="mb-4 space-y-2"><IncompleteShipment shipment={{ supplierId: form.supplierId || null, orderNr: form.orderNr || null, countActual: hasCount ? cntAct : null, costPerKg: form.costVal.trim() ? perKg : null, lots: form.lots.filter(l => l.lotNumber.trim()).map(l => ({ lotNumber: l.lotNumber, qty: +l.qty })) }} />
             {hasCount && form.countDoc.trim() && cntDoc !== cntAct && <Banner tone="warn"><b>Mospërputhje sasie.</b> Dokumenti: {cntDoc} · Faktik: {cntAct} ({cntAct - cntDoc > 0 ? "+" : ""}{cntAct - cntDoc} {unit}). Do të regjistrohet me dërgesën.</Banner>}
-            {form.netKgDoc.trim() && wDoc !== wAct && <Banner tone="warn"><b>Mospërputhje peshe.</b> Dokumenti: {fmtKg(wDoc)} · Faktike: {fmtKg(wAct)} ({wAct - wDoc > 0 ? "+" : ""}{(wAct - wDoc).toFixed(2)} kg).</Banner>}
+            {form.netKgDoc.trim() && wDoc !== wAct && <Banner tone="warn"><b>Mospërputhje peshe.</b> Dokumenti: {fmtKg(wDoc)} · Faktike: {fmtKg(wAct)} ({wAct - wDoc > 0 ? "+" : ""}{fmtNum(wAct - wDoc, 3)} kg).</Banner>}
             {hasLots && lotSum !== cntAct && <Banner tone="warn"><b>Lotet nuk përputhen.</b> Shuma e loteve: {lotSum} · Totali: {cntAct}.</Banner>}
           </div>
           <div className="grid gap-x-8 gap-y-1 rounded-lg border bg-card p-5 sm:grid-cols-2">
@@ -288,8 +288,8 @@ function DualField({ label, doc, act, onDoc, onAct, diff, fmt, step, hint }: { l
   return (
     <div className="mt-4"><Label>{label}{label.startsWith("Pesha") && <Req />}</Label>
       <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
-        <div><p className="mb-1 text-[10px] text-muted-foreground">Sipas dokumentit</p><Input type="number" aria-label={`${label} — dokument`} step={step} value={doc} onChange={e => onDoc(e.target.value)} /></div>
-        <div><p className="mb-1 text-[10px] text-muted-foreground">Faktik (i shkarkuar)</p><Input type="number" aria-label={`${label} — faktik`} step={step} value={act} onChange={e => onAct(e.target.value)} /></div>
+        <div><p className="mb-1 text-[10px] text-muted-foreground">Sipas dokumentit</p>{!step ? <Input type="number" inputMode="numeric" aria-label={`${label} — dokument`} step={step} value={doc} onChange={e => onDoc(e.target.value)} /> : <DecimalInput aria-label={`${label} — dokument`} value={doc} onChange={e => onDoc(e.target.value)} />}</div>
+        <div><p className="mb-1 text-[10px] text-muted-foreground">Faktik (i shkarkuar)</p>{!step ? <Input type="number" inputMode="numeric" aria-label={`${label} — faktik`} step={step} value={act} onChange={e => onAct(e.target.value)} /> : <DecimalInput aria-label={`${label} — faktik`} value={act} onChange={e => onAct(e.target.value)} />}</div>
         <Badge variant={diff === 0 ? "entry" : "warn"} className="mb-2.5">{diff == null ? "pa krahasim" : diff === 0 ? "përputhet" : fmt(diff)}</Badge>
       </div>
       {hint && <Hint>{hint}</Hint>}
