@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, Check, ChevronRight, Delete, Equal, FileText, Keyboard, Layers, Plus, Printer, Receipt, UserCheck, X } from "lucide-react";
 import { openReceiptWindow, receiptFor, printSale, showReceipt } from "@/lib/print-receipt";
+import type { ReceiptCopy } from "@/lib/receipt";
 import { Button } from "@/components/ui/button";
 import { DecimalInput, Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -80,10 +81,11 @@ export default function DaljePage() {
       const s = await store.finalizeSale({ clientId, lines, totalKg: +totalKg.toFixed(2), totalValue: totalVal, requestId: requestId.current, date: saleDate });
       requestId.current = null;
       setDoneSale(s); setStep("done"); toast.success("Porosia u finalizua");
-      if (print && !showReceipt(win, receiptFor(s, store.clients, store.products))) toast("Shfletuesi bllokoi dritaren e printimit. Shtyp «Printo faturën» më poshtë.");
+      if (print && !showReceipt(win, receiptFor(s, store))) toast("Shfletuesi bllokoi dritaren e printimit. Shtyp «Printo faturën» më poshtë.");
     } catch (e) { win?.close(); toast.error(e instanceof Error ? e.message : "Porosia nuk u finalizua"); }
     finally { setSaving(false); }
   };
+  const reprint = (copies?: ReceiptCopy[]) => { if (doneSale && !printSale(doneSale, store, copies)) toast.error("Shfletuesi bllokoi dritaren e printimit. Lejo dritaret pop-up për këtë faqe."); };
   const reset = () => { requestId.current = null; setLines([]); setProduct(null); setShip(null); setWeights([]); setBuf(""); setClientId(""); setSaleDate(todayInTirane()); setDoneSale(null); setStep("order"); };
   const printWeights = () => {
     const w = method === "PALLET" ? pallets.map(Number).filter(n => n > 0) : weights; const win = window.open("", "_blank"); if (!win) return;
@@ -281,7 +283,7 @@ export default function DaljePage() {
               <Button variant="outline" size="lg" disabled={!clientId || !!dateErr || saving} onClick={() => finalize(true)}><Printer /> Printo faturën</Button>
               <Button variant="exit" size="lg" disabled={!clientId || !!dateErr || saving} onClick={() => finalize()}><Check /> {saving ? "Po ruhet…" : "Finalizo porosinë"}</Button>
             </div>
-            <p className="mt-1.5 text-xs text-muted-foreground">«Printo faturën» e ruan porosinë dhe hap fletën e porosisë me numrin e saj për ta printuar ose ruajtur si PDF.</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">«Printo faturën» e ruan porosinë dhe hap fletën e porosisë me numrin e saj në dy kopje (kontabiliteti me ngarkesat, klienti vetëm me produktet) për t’i printuar ose ruajtur si PDF.</p>
           </div>
         </motion.div>
       )}
@@ -293,7 +295,8 @@ export default function DaljePage() {
           <p className="mb-5 text-sm text-muted-foreground">Klienti: {store.clients.find(c => c.id === clientId)?.name} · {fmtDate(saleDate)}</p>
           <div className="rounded-lg border bg-card p-4 text-left text-sm">{lines.map((l, i) => <div key={i} className="flex justify-between border-b py-2 last:border-0"><span>{pname(l.productId)} <span className="text-muted-foreground">({fmtKg(l.kg)})</span></span><span className="tabular">{fmtLek(l.total)}</span></div>)}<div className="mt-2 flex justify-between border-t pt-3 font-medium"><span>Totali</span><span className="text-exit tabular">{fmtLek(doneSale.totalValue)}</span></div></div>
           <p className="mt-3 text-xs text-muted-foreground">Stoku u përditësua — kg u hoqën nga dërgesat përkatëse dhe lëvizjet u regjistruan.</p>
-          <div className="mt-4 grid grid-cols-2 gap-2"><Button variant="outline" size="lg" onClick={() => { if (!printSale(doneSale, store.clients, store.products)) toast.error("Shfletuesi bllokoi dritaren e printimit. Lejo dritaret pop-up për këtë faqe."); }}><Printer /> Printo faturën</Button><Button variant="exit" size="lg" onClick={reset}>Porosi e re</Button></div>
+          <div className="mt-4 grid grid-cols-2 gap-2"><Button variant="outline" size="lg" onClick={() => reprint()}><Printer /> Printo faturën</Button><Button variant="exit" size="lg" onClick={reset}>Porosi e re</Button></div>
+          <div className="mt-2 flex justify-center gap-4 text-xs text-muted-foreground"><span>Vetëm një kopje:</span><button type="button" className="underline hover:text-foreground" onClick={() => reprint(["accounting"])}>për kontabilitetin</button><button type="button" className="underline hover:text-foreground" onClick={() => reprint(["client"])}>për klientin</button></div>
         </motion.div>
       )}
     </AnimatePresence>
