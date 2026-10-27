@@ -66,7 +66,8 @@ export interface SaleLine {
   weights?: number[];
   fixedKg?: number;
 }
-/** isReturn: a client credit built from a return (negative kg and value), not an order. */
-export interface Sale { id: string; clientId: string; date: string; lines: SaleLine[]; totalKg: number; totalValue: number; isReturn?: boolean; }
+/** isReturn: a client credit built from a return (negative kg and value), not an order.
+ *  receiptNr: order sheet ("Fletë porosi") number; null for sales made before numbering began. */
+export interface Sale { id: string; clientId: string; date: string; lines: SaleLine[]; totalKg: number; totalValue: number; isReturn?: boolean; receiptNr?: number | null; }
 
 export interface Thresholds { expiryDays: number; lowShipmentCount: number; lowProductKg: Record<string, number>; }

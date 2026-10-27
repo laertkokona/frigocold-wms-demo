@@ -133,14 +133,14 @@ export default function Kontabiliteti() {
               <tbody>{prods.map(r => (
                 <tr key={r.product.id} className="border-b last:border-0 hover:bg-accent/30">
                   <td className="px-4 py-2.5"><div className="font-medium">{r.product.name}</div><div className="text-[11px] text-muted-foreground">{fmtPercent(r.profitShare, 0)} e fitimit total</div></td>
-                  <Td>{fmtNum(r.kg, 1)}</Td><Td>{fmtLek(r.revenue)}</Td><Td>{fmtLek(r.cogs)}</Td>
+                  <Td>{fmtNum(r.kg, 3)}</Td><Td>{fmtLek(r.revenue)}</Td><Td>{fmtLek(r.cogs)}</Td>
                   <Td className="text-entry">{fmtLek(r.profit)}</Td>
                   <Td><span className={cn(r.margin != null && r.margin < 0.1 && r.kg > 0 && "text-warn")}>{r.kg ? fmtPercent(r.margin) : "—"}</span></Td>
-                  <Td>{r.kg ? fmtNum(r.avgSell) : "—"}</Td><Td className="text-muted-foreground">{r.kg ? fmtNum(r.avgCost) : "—"}</Td>
-                  <Td className="text-entry">{r.kg ? fmtNum(r.spread) : "—"}</Td>
+                  <Td>{r.kg ? fmtNum(r.avgSell, 2) : "—"}</Td><Td className="text-muted-foreground">{r.kg ? fmtNum(r.avgCost, 2) : "—"}</Td>
+                  <Td className="text-entry">{r.kg ? fmtNum(r.spread, 2) : "—"}</Td>
                   <Td><Delta a={r.kg} b={r.prevKg} /></Td>
                 </tr>))}</tbody>
-              {prods.length > 0 && <tfoot><tr className="border-t-2 font-medium"><td className="px-4 py-2.5">Totali</td><Td>{fmtNum(cur.kg, 1)}</Td><Td>{fmtLek(cur.revenue)}</Td><Td>{fmtLek(cur.cogs)}</Td><Td className="text-entry">{fmtLek(cur.profit)}</Td><Td>{fmtPercent(cur.margin)}</Td><Td colSpan={4} /></tr></tfoot>}
+              {prods.length > 0 && <tfoot><tr className="border-t-2 font-medium"><td className="px-4 py-2.5">Totali</td><Td>{fmtNum(cur.kg, 3)}</Td><Td>{fmtLek(cur.revenue)}</Td><Td>{fmtLek(cur.cogs)}</Td><Td className="text-entry">{fmtLek(cur.profit)}</Td><Td>{fmtPercent(cur.margin)}</Td><Td colSpan={4} /></tr></tfoot>}
             </table></div>
             {!prods.length && <Empty />}
           </CardContent></Card>
@@ -153,7 +153,7 @@ export default function Kontabiliteti() {
                   <Bar value={r.avgCost} max={Math.max(1, ...prods.map(x => x.avgSell))} tone="warn" className="max-w-[45%]" />
                   <Bar value={r.spread} max={Math.max(1, ...prods.map(x => x.avgSell))} tone="entry" className="max-w-[45%]" />
                 </div>
-                <span className="w-44 text-right text-xs tabular"><span className="text-muted-foreground">{fmtNum(r.avgCost)}</span> + <span className="text-entry">{fmtNum(r.spread)}</span> = {fmtNum(r.avgSell)} Lek</span>
+                <span className="w-44 text-right text-xs tabular"><span className="text-muted-foreground">{fmtNum(r.avgCost, 2)}</span> + <span className="text-entry">{fmtNum(r.spread, 2)}</span> = {fmtNum(r.avgSell, 2)} Lek</span>
               </div>))}
             {!prods.some(r => r.kg > 0) && <Empty />}
           </CardContent></Card>
@@ -172,13 +172,13 @@ export default function Kontabiliteti() {
 
           <Card className="mt-4"><CardHeader><CardTitle>Çmimi sipas klientit</CardTitle><CardDescription>Sa ka paguar secili për të njëjtin produkt — {p.label}</CardDescription></CardHeader><CardContent>
             {disp.rows.length > 1 && <Banner tone={disp.max - disp.min > disp.wAvg * 0.1 ? "warn" : "info"} className="mb-3">
-              Diferenca mes çmimit më të lartë dhe më të ulët: <b>{fmtNum(disp.max - disp.min)} Lek/kg</b> ({(((disp.max - disp.min) / (disp.wAvg || 1)) * 100).toFixed(0)}% e mesatares). Mesatarja e ponderuar: {fmtNum(disp.wAvg)} Lek/kg.
+              Diferenca mes çmimit më të lartë dhe më të ulët: <b>{fmtNum(disp.max - disp.min, 2)} Lek/kg</b> ({(((disp.max - disp.min) / (disp.wAvg || 1)) * 100).toFixed(0)}% e mesatares). Mesatarja e ponderuar: {fmtNum(disp.wAvg, 2)} Lek/kg.
             </Banner>}
             {disp.rows.map(r => (
               <div key={r.client.id} className="flex items-center gap-3 border-b py-2.5 text-sm last:border-0">
                 <Link href={`/klientet/${r.client.id}`} className="w-40 truncate hover:underline">{r.client.name}</Link>
                 <Bar value={r.avg} max={Math.max(1, disp.max)} tone={r.avg >= disp.wAvg ? "entry" : "warn"} />
-                <span className="w-24 text-right tabular">{fmtNum(r.avg)} Lek/kg</span>
+                <span className="w-24 text-right tabular">{fmtNum(r.avg, 2)} Lek/kg</span>
                 <span className="w-20 text-right text-xs text-muted-foreground tabular">{fmtKg(r.kg, 0)}</span>
               </div>))}
             {!disp.rows.length && <Empty text="Ky produkt nuk është shitur në këtë periudhë." />}
@@ -193,10 +193,10 @@ export default function Kontabiliteti() {
               <tbody>{clis.map(r => (
                 <tr key={r.client.id} className="border-b last:border-0 hover:bg-accent/30">
                   <td className="px-4 py-2.5"><Link href={`/klientet/${r.client.id}`} className="font-medium hover:underline">{r.client.name}</Link><div className="text-[11px] text-muted-foreground">{r.client.city}</div></td>
-                  <Td>{r.orders}</Td><Td>{fmtNum(r.kg, 1)}</Td><Td>{fmtLek(r.revenue)}</Td>
+                  <Td>{r.orders}</Td><Td>{fmtNum(r.kg, 3)}</Td><Td>{fmtLek(r.revenue)}</Td>
                   <Td className="text-entry">{fmtLek(r.profit)}</Td>
                   <Td><span className={cn(r.margin != null && r.margin < 0.1 && "text-warn")}>{fmtPercent(r.margin)}</span></Td>
-                  <Td>{fmtNum(r.avgPrice)}</Td><Td className="text-muted-foreground">{fmtPercent(r.profitShare, 0)}</Td>
+                  <Td>{fmtNum(r.avgPrice, 2)}</Td><Td className="text-muted-foreground">{fmtPercent(r.profitShare, 0)}</Td>
                 </tr>))}</tbody>
             </table></div>
             {!clis.length && <Empty />}
@@ -218,9 +218,9 @@ export default function Kontabiliteti() {
               <tbody>{sups.map(r => (
                 <tr key={r.supplier.id} className="border-b last:border-0 hover:bg-accent/30">
                   <td className="px-4 py-2.5"><div className="font-medium">{r.supplier.name}</div><div className="text-[11px] text-muted-foreground">{r.supplier.country}</div></td>
-                  <Td>{r.shipments}</Td><Td>{fmtNum(r.kgBought, 0)}</Td><Td>{fmtLek(r.spend)}</Td><Td>{r.kgBought ? fmtNum(r.avgCost) : "—"}</Td>
+                  <Td>{r.shipments}</Td><Td>{fmtNum(r.kgBought, 0)}</Td><Td>{fmtLek(r.spend)}</Td><Td>{r.kgBought ? fmtNum(r.avgCost, 2) : "—"}</Td>
                   <Td>{r.realised.kg ? <span className="text-entry">{fmtPercent(r.realised.margin)}</span> : <span className="text-muted-foreground">—</span>}</Td>
-                  <Td>{r.shortfallKg != null && r.shortfallKg > 0.01 ? <span className="text-warn">{fmtNum(r.shortfallKg, 1)} kg · {fmtLek(r.shortfallLek)}</span> : <span className="text-muted-foreground">—</span>}</Td>
+                  <Td>{r.shortfallKg != null && r.shortfallKg > 0.01 ? <span className="text-warn">{fmtNum(r.shortfallKg, 3)} kg · {fmtLek(r.shortfallLek)}</span> : <span className="text-muted-foreground">—</span>}</Td>
                 </tr>))}</tbody>
             </table></div>
             {!sups.length && <Empty />}
@@ -305,15 +305,15 @@ function MonthsTab({ rows }: { rows: MonthSalesRow[] }) {
       <tbody>{rows.map(r => { const isOpen = open === r.m; return <Fragment key={r.m}>
         <tr className={cn("cursor-pointer border-b hover:bg-accent/30", isOpen && "bg-accent/20")} onClick={() => setOpen(isOpen ? null : r.m)}>
           <td className="px-4 py-2.5 font-medium"><span className="inline-flex items-center gap-1.5">{r.products.length ? (isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />) : <span className="w-3.5" />}{r.label}</span></td>
-          <Td>{r.orders}</Td><Td className="font-medium">{fmtNum(r.kg, 2)}</Td><Td className="text-muted-foreground">{r.returnsKg > 0 ? fmtNum(r.returnsKg, 2) : "—"}</Td>
+          <Td>{r.orders}</Td><Td className="font-medium">{fmtNum(r.kg, 3)}</Td><Td className="text-muted-foreground">{r.returnsKg > 0 ? fmtNum(r.returnsKg, 3) : "—"}</Td>
           <Td>{fmtLek(r.revenue)}</Td><Td className="text-entry">{fmtLek(r.profit)}</Td><Td>{r.kg ? fmtPercent(r.margin) : "—"}</Td>
         </tr>
         {isOpen && r.products.map(p => <tr key={`${r.m}-${p.id}`} className="border-b bg-secondary/40 text-xs">
-          <td className="py-2 pl-10 pr-4">{p.name}</td><Td /><Td>{fmtNum(p.kg, 2)}</Td><Td className="text-muted-foreground">{p.returnsKg > 0 ? fmtNum(p.returnsKg, 2) : "—"}</Td>
+          <td className="py-2 pl-10 pr-4">{p.name}</td><Td /><Td>{fmtNum(p.kg, 3)}</Td><Td className="text-muted-foreground">{p.returnsKg > 0 ? fmtNum(p.returnsKg, 3) : "—"}</Td>
           <Td>{fmtLek(p.revenue)}</Td><Td className="text-entry">{fmtLek(p.profit)}</Td><Td>{p.profit == null || !p.revenue ? "—" : fmtPercent(p.profit / p.revenue)}</Td>
         </tr>)}
       </Fragment>; })}</tbody>
-      {rows.length > 0 && <tfoot><tr className="border-t-2 font-medium"><td className="px-4 py-2.5">Gjithsej</td><Td>{total.orders}</Td><Td>{fmtNum(total.kg, 2)}</Td><Td>{total.returnsKg > 0 ? fmtNum(total.returnsKg, 2) : "—"}</Td><Td>{fmtLek(total.revenue)}</Td><Td className="text-entry">{fmtLek(total.profit)}</Td><Td>{total.profit == null || !total.revenue ? "—" : fmtPercent(total.profit / total.revenue)}</Td></tr></tfoot>}
+      {rows.length > 0 && <tfoot><tr className="border-t-2 font-medium"><td className="px-4 py-2.5">Gjithsej</td><Td>{total.orders}</Td><Td>{fmtNum(total.kg, 3)}</Td><Td>{total.returnsKg > 0 ? fmtNum(total.returnsKg, 3) : "—"}</Td><Td>{fmtLek(total.revenue)}</Td><Td className="text-entry">{fmtLek(total.profit)}</Td><Td>{total.profit == null || !total.revenue ? "—" : fmtPercent(total.profit / total.revenue)}</Td></tr></tfoot>}
     </table></div>
     {!rows.length && <Empty />}
     <p className="px-4 pt-3 text-xs text-muted-foreground"><Info className="mr-1 inline h-3 w-3" />&quot;Kg shitur&quot; është pesha që doli nga magazina me shitje (shitjet e anuluara nuk llogariten). Kthimet nga klientët tregohen veç dhe zbriten nga të ardhurat dhe fitimi në muajin e kthimit.</p>

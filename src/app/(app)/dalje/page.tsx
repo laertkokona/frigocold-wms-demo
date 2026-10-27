@@ -2,9 +2,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRight, Check, ChevronRight, Delete, Equal, FileText, Keyboard, Layers, Plus, Receipt, UserCheck, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronRight, Delete, Equal, FileText, Keyboard, Layers, Plus, Printer, Receipt, UserCheck, X } from "lucide-react";
+import { openReceiptWindow, receiptFor, printSale, showReceipt } from "@/lib/print-receipt";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DecimalInput, Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Banner } from "@/components/ui/banner";
@@ -13,7 +14,7 @@ import { SearchBox, matches } from "@/components/search-box";
 import { remainingCount, remainingKg, useStore } from "@/lib/store";
 import { fefoOrder } from "@/lib/calc";
 import { loadSpecLabel, loadWeightType, shipmentLabel } from "@/lib/stock";
-import type { Product, SaleLine, SaleMethod, Shipment } from "@/lib/types";
+import type { Product, Sale, SaleLine, SaleMethod, Shipment } from "@/lib/types";
 import { cn, daysUntil, fmtDate, fmtKg, fmtLek, fmtMonth, fmtNum, saleMethodLabel, todayInTirane } from "@/lib/utils";
 
 type Step = "order" | "product" | "shipment" | "method" | "fixed" | "format" | "keypad" | "pallet" | "total" | "price" | "client" | "done";
@@ -32,11 +33,14 @@ export default function DaljePage() {
   const [fixedKg, setFixedKg] = useState(""); const [fixedN, setFixedN] = useState("");
   const [fmt, setFmt] = useState({ i: 2, d: 2 }); const [buf, setBuf] = useState(""); const [weights, setWeights] = useState<number[]>([]);
   const [pallets, setPallets] = useState<string[]>(["", "", ""]);
+  // The pallet count is typed freely (it may be empty while editing); the weight rows follow it once it is a valid number.
+  const [palletN, setPalletN] = useState("3");
   const [totN, setTotN] = useState(""); const [totKg, setTotKg] = useState("");
   const [price, setPrice] = useState("");
   const [clientId, setClientId] = useState(""); const [saleDate, setSaleDate] = useState(todayInTirane);
   const [lineKg, setLineKg] = useState(0); const [lineQty, setLineQty] = useState<number | null>(null);
-  const [doneSale, setDoneSale] = useState<{ id: string; totalKg: number; totalValue: number } | null>(null);
+  const [doneSale, setDoneSale] = useState<Sale | null>(null);
+  const [saving, setSaving] = useState(false);
   const requestId = useRef<string | null>(null);
 
   const totalKg = lines.reduce((a, l) => a + l.kg, 0), totalVal = lines.reduce((a, l) => a + l.total, 0);
@@ -65,18 +69,25 @@ export default function DaljePage() {
     setLines(ls => [...ls, { productId: product.id, shipmentId: ship.id, method, qty: lineQty, kg: +lineKg.toFixed(3), pricePerKg: p, total: lineKg * p, weights: method === "VARIABLE" ? weights : method === "PALLET" ? pallets.map(Number).filter(n => n > 0) : undefined, fixedKg: method === "FIXED" ? +fixedKg : undefined }]);
     toast.success(`${product.name} u shtua në porosi`); setStep("order");
   };
-  const finalize = async () => {
+  /** Saves the sale; with `print`, also prints its order sheet ("Fletë porosi"), which gets its number when the sale is saved. */
+  const finalize = async (print = false) => {
+    if (saving) return;
+    // The print window must be opened during the click itself, or the browser blocks it; it is filled once the sale is saved.
+    const win = print ? openReceiptWindow() : null;
+    setSaving(true);
     try {
       requestId.current ??= crypto.randomUUID();
       const s = await store.finalizeSale({ clientId, lines, totalKg: +totalKg.toFixed(2), totalValue: totalVal, requestId: requestId.current, date: saleDate });
       requestId.current = null;
-      setDoneSale({ id: s.id, totalKg: s.totalKg, totalValue: s.totalValue }); setStep("done"); toast.success("Porosia u finalizua");
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Porosia nuk u finalizua"); }
+      setDoneSale(s); setStep("done"); toast.success("Porosia u finalizua");
+      if (print && !showReceipt(win, receiptFor(s, store.clients, store.products))) toast("Shfletuesi bllokoi dritaren e printimit. Shtyp «Printo faturën» më poshtë.");
+    } catch (e) { win?.close(); toast.error(e instanceof Error ? e.message : "Porosia nuk u finalizua"); }
+    finally { setSaving(false); }
   };
   const reset = () => { requestId.current = null; setLines([]); setProduct(null); setShip(null); setWeights([]); setBuf(""); setClientId(""); setSaleDate(todayInTirane()); setDoneSale(null); setStep("order"); };
   const printWeights = () => {
     const w = method === "PALLET" ? pallets.map(Number).filter(n => n > 0) : weights; const win = window.open("", "_blank"); if (!win) return;
-    win.document.write(`<html><head><title>Peshat — ${escapeHtml(product?.name ?? "")}</title><style>body{font-family:system-ui;padding:32px;color:#111}h1{font-size:18px;margin:0 0 4px}p{color:#555;margin:0 0 16px;font-size:13px}table{border-collapse:collapse;width:100%;max-width:420px}td{padding:6px 10px;border-bottom:1px solid #ddd;font-size:14px}td:last-child{text-align:right;font-variant-numeric:tabular-nums}tr.t td{font-weight:700;border-top:2px solid #111;border-bottom:0}</style></head><body><h1>${escapeHtml(product?.name ?? "")}</h1><p>Lot ${escapeHtml(ship ? lotOf(ship) : "")} · ${fmtDate(todayInTirane())} · FrigoCold WMS</p><table>${w.map((x, i) => `<tr><td>#${i + 1}</td><td>${x.toFixed(3)} kg</td></tr>`).join("")}<tr class="t"><td>Totali (${w.length})</td><td>${w.reduce((a, b) => a + b, 0).toFixed(3)} kg</td></tr></table><script>window.print()</script></body></html>`);
+    win.document.write(`<html><head><title>Peshat — ${escapeHtml(product?.name ?? "")}</title><style>body{font-family:system-ui;padding:32px;color:#111}h1{font-size:18px;margin:0 0 4px}p{color:#555;margin:0 0 16px;font-size:13px}table{border-collapse:collapse;width:100%;max-width:420px}td{padding:6px 10px;border-bottom:1px solid #ddd;font-size:14px}td:last-child{text-align:right;font-variant-numeric:tabular-nums}tr.t td{font-weight:700;border-top:2px solid #111;border-bottom:0}</style></head><body><h1>${escapeHtml(product?.name ?? "")}</h1><p>Lot ${escapeHtml(ship ? lotOf(ship) : "")} · ${fmtDate(todayInTirane())} · FrigoCold WMS</p><table>${w.map((x, i) => `<tr><td>#${i + 1}</td><td>${fmtNum(x, 3)} kg</td></tr>`).join("")}<tr class="t"><td>Totali (${w.length})</td><td>${fmtNum(w.reduce((a, b) => a + b, 0), 3)} kg</td></tr></table><script>window.print()</script></body></html>`);
     win.document.close();
   };
   const today = todayInTirane();
@@ -93,7 +104,7 @@ export default function DaljePage() {
             {lines.map((l, i) => { const s = store.shipments.find(x => x.id === l.shipmentId); return (
               <div key={i} className="rounded-lg border bg-card p-4">
                 <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-medium">{pname(l.productId)}</div><div className="text-xs text-muted-foreground">Lot {s ? lotOf(s) : "—"} · {l.qty == null ? "sasi e panjohur" : `${l.qty} ${unitOf(s)}`} · {saleMethodLabel(l, unitOf(s))}</div></div><Button variant="ghost" size="icon" aria-label="Hiq" onClick={() => { requestId.current = null; setLines(ls => ls.filter((_, j) => j !== i)); }}><X /></Button></div>
-                <div className="mt-3 grid grid-cols-3 gap-3 border-t pt-3 text-sm tabular"><KV k="Pesha" v={fmtKg(l.kg)} /><KV k="Çmimi/kg" v={fmtNum(l.pricePerKg) + " Lek"} /><KV k="Vlera" v={<span className="text-exit">{fmtLek(l.total)}</span>} /></div>
+                <div className="mt-3 grid grid-cols-3 gap-3 border-t pt-3 text-sm tabular"><KV k="Pesha" v={fmtKg(l.kg)} /><KV k="Çmimi/kg" v={fmtNum(l.pricePerKg, 2) + " Lek"} /><KV k="Vlera" v={<span className="text-exit">{fmtLek(l.total)}</span>} /></div>
               </div>); })}
           </div>
           <Button variant="exit" size="lg" className="mt-3 w-full" onClick={() => setStep("product")}><Plus /> Shto produkt në porosi</Button>
@@ -141,7 +152,7 @@ export default function DaljePage() {
           <div className="max-w-xl space-y-3">
             {wt !== "PALLET" && <MethodCard icon={Equal} title="Peshë fikse për karton" desc="Të gjithë kartonët kanë të njëjtën peshë. Fut peshën një herë dhe numrin e kartonave — sistemi shumëzon." rec={wt === "FIXED"} onClick={() => { setMethod("FIXED"); setFixedKg(String(ship.fixedKg ?? "")); const rc = remainingCount(ship); setFixedN(rc == null ? "" : String(Math.min(40, rc))); setStep("fixed"); }} />}
             {wt !== "PALLET" && <MethodCard icon={Keyboard} title="Peshë e ndryshme për karton" desc="Çdo karton ka peshë tjetër. Shkruaj peshat me tastierë të shpejtë — sistemi i mbledh vetë." rec={wt === "VARIABLE"} onClick={() => { setMethod("VARIABLE"); setWeights([]); setBuf(""); setStep("format"); }} />}
-            {wt === "PALLET" && <MethodCard icon={Layers} title="Peshë për secilën paletë" desc="Fut peshën e secilës paletë veç e veç." rec onClick={() => { setMethod("PALLET"); setPallets(["", "", ""]); setStep("pallet"); }} />}
+            {wt === "PALLET" && <MethodCard icon={Layers} title="Peshë për secilën paletë" desc="Fut peshën e secilës paletë veç e veç." rec onClick={() => { setMethod("PALLET"); setPallets(["", "", ""]); setPalletN("3"); setStep("pallet"); }} />}
             <MethodCard icon={Receipt} title="Vetëm numri dhe pesha totale" desc={wt === "PALLET" ? "Fut numrin e paletave dhe peshën totale (p.sh. nga fatura) — pa peshat e secilës paletë." : "Fut numrin e kartonave dhe peshën totale (p.sh. nga fatura) — pa peshat e secilit karton."} onClick={() => { setMethod("TOTAL"); setTotN(""); setTotKg(""); setStep("total"); }} />
           </div>
         </motion.div>
@@ -151,10 +162,10 @@ export default function DaljePage() {
         <motion.div key="fixed" {...fade}>
           <PageHeader title={`Peshë fikse — ${product.name}`} right={<Button variant="ghost" onClick={() => setStep("method")}><ArrowLeft /></Button>} />
           <div className="max-w-md rounded-lg border bg-card p-5">
-            <div className="grid grid-cols-2 gap-3"><div><Label>Pesha për karton (kg)</Label><Input type="number" step="0.01" value={fixedKg} onChange={e => setFixedKg(e.target.value)} className="h-14 text-center text-xl font-semibold" /></div><div><Label>Numri i kartonave</Label><Input type="number" value={fixedN} onChange={e => setFixedN(e.target.value)} className="h-14 text-center text-xl font-semibold" /></div></div>
+            <div className="grid grid-cols-2 gap-3"><div><Label>Pesha për karton (kg)</Label><DecimalInput value={fixedKg} onChange={e => setFixedKg(e.target.value)} className="h-14 text-center text-xl font-semibold" /></div><div><Label>Numri i kartonave</Label><Input type="number" value={fixedN} onChange={e => setFixedN(e.target.value)} className="h-14 text-center text-xl font-semibold" /></div></div>
             <div className="mt-3 flex flex-wrap gap-2">{[...new Set([10, 20, 40, ...(rc == null ? [] : [rc])])].filter(x => x > 0 && (rc == null || x <= rc)).map(x => <Button key={x} size="sm" variant="outline" onClick={() => setFixedN(String(x))}>{x} kartona</Button>)}</div>
-            <div className="mt-4 flex items-center justify-center gap-4 rounded-md bg-secondary p-4 tabular"><Big v={w.toFixed(2)} l="kg / karton" /><span className="text-muted-foreground">×</span><Big v={String(n)} l="kartona" /><span className="text-muted-foreground">=</span><Big v={(w * n).toFixed(2)} l="kg total" accent /></div>
-            <div className={cn("mt-3 flex justify-between rounded-md px-3 py-2 text-xs", over ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{over ? "Më shumë se stoku i lotit!" : rc == null ? "Kg në stok te ky lot" : "Në stok te ky lot"}</span><span className="tabular">{rc == null ? `${fmtNum(w * n, 2)} / ${fmtNum(remainingKg(ship), 2)} kg` : `${n} / ${rc}`}</span></div>
+            <div className="mt-4 flex items-center justify-center gap-4 rounded-md bg-secondary p-4 tabular"><Big v={fmtNum(w, 3)} l="kg / karton" /><span className="text-muted-foreground">×</span><Big v={String(n)} l="kartona" /><span className="text-muted-foreground">=</span><Big v={fmtNum(w * n, 3)} l="kg total" accent /></div>
+            <div className={cn("mt-3 flex justify-between rounded-md px-3 py-2 text-xs", over ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{over ? "Më shumë se stoku i lotit!" : rc == null ? "Kg në stok te ky lot" : "Në stok te ky lot"}</span><span className="tabular">{rc == null ? `${fmtNum(w * n, 3)} / ${fmtNum(remainingKg(ship), 3)} kg` : `${n} / ${rc}`}</span></div>
             <Button variant="exit" size="lg" className="mt-4 w-full" disabled={!w || !n || over} onClick={() => openPrice(w * n, n)}>Vazhdo te çmimi <ArrowRight /></Button>
           </div>
         </motion.div>); })()}
@@ -188,10 +199,10 @@ export default function DaljePage() {
             <div>
               <div className="rounded-lg bg-secondary p-3">
                 <div className="mb-2 flex justify-between text-xs"><span className="font-medium">Peshat</span><span className="text-muted-foreground">{weights.length} futur</span></div>
-                <div ref={gridRef} className="scroll-thin grid max-h-48 grid-cols-3 gap-1.5 overflow-y-auto">{weights.map((w, i) => <button key={i} onClick={() => setWeights(ws => ws.filter((_, j) => j !== i))} className="group rounded-md border bg-card px-1 py-1.5 text-center font-mono text-xs tabular hover:border-danger" title="Hiq"><span className="block text-[9px] text-muted-foreground group-hover:text-danger">#{i + 1}</span>{w.toFixed(fmt.d)}</button>)}</div>
+                <div ref={gridRef} className="scroll-thin grid max-h-48 grid-cols-3 gap-1.5 overflow-y-auto">{weights.map((w, i) => <button key={i} onClick={() => setWeights(ws => ws.filter((_, j) => j !== i))} className="group rounded-md border bg-card px-1 py-1.5 text-center font-mono text-xs tabular hover:border-danger" title="Hiq"><span className="block text-[9px] text-muted-foreground group-hover:text-danger">#{i + 1}</span>{fmtNum(w, fmt.d)}</button>)}</div>
                 {weights.length === 0 && <p className="py-6 text-center text-xs text-muted-foreground">Asnjë peshë ende. Fillo të shkruash.</p>}
-                <div className="mt-3 border-t pt-3 tabular"><div className="flex justify-between text-xs"><span className="text-muted-foreground">Kartona</span><span>{weights.length}</span></div><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Totali</span><span className="text-2xl font-semibold text-exit">{wSum.toFixed(fmt.d)}</span></div></div>
-                {(() => { const rc = remainingCount(ship), over = rc == null ? wSum > remainingKg(ship) + 0.0005 : weights.length > rc; return <div className={cn("mt-2 flex justify-between rounded-md px-3 py-2 text-xs", over ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{over ? "Më shumë se stoku!" : rc == null ? "Kg në stok te ky lot" : "Në stok te ky lot"}</span><span className="tabular">{rc == null ? `${fmtNum(wSum, 2)} / ${fmtNum(remainingKg(ship), 2)} kg` : `${weights.length} / ${rc}`}</span></div>; })()}
+                <div className="mt-3 border-t pt-3 tabular"><div className="flex justify-between text-xs"><span className="text-muted-foreground">Kartona</span><span>{weights.length}</span></div><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Totali</span><span className="text-2xl font-semibold text-exit">{fmtNum(wSum, 3)}</span></div></div>
+                {(() => { const rc = remainingCount(ship), over = rc == null ? wSum > remainingKg(ship) + 0.0005 : weights.length > rc; return <div className={cn("mt-2 flex justify-between rounded-md px-3 py-2 text-xs", over ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{over ? "Më shumë se stoku!" : rc == null ? "Kg në stok te ky lot" : "Në stok te ky lot"}</span><span className="tabular">{rc == null ? `${fmtNum(wSum, 3)} / ${fmtNum(remainingKg(ship), 3)} kg` : `${weights.length} / ${rc}`}</span></div>; })()}
               </div>
               <Button variant="outline" size="sm" className="mt-2 w-full" disabled={!weights.length} onClick={printWeights}><FileText /> Gjenero PDF me peshat</Button>
               <Button variant="exit" size="lg" className="mt-2 w-full" disabled={!weights.length} onClick={() => openPrice(wSum, weights.length)}>Përfundo peshat <ArrowRight /></Button>
@@ -204,10 +215,10 @@ export default function DaljePage() {
         <motion.div key="pallet" {...fade}>
           <PageHeader title={`Paletat — ${product.name}`} right={<Button variant="ghost" onClick={() => setStep("method")}><ArrowLeft /></Button>} />
           <div className="max-w-md">
-            <div className="mb-3 flex items-center gap-3"><Label className="mb-0">Numri i paletave</Label><Input type="number" className="w-24" value={pallets.length} onChange={e => { const n = Math.max(1, Math.min(40, +e.target.value || 1)); setPallets(p => Array.from({ length: n }, (_, i) => p[i] ?? "")); }} /></div>
-            <div className="space-y-2">{pallets.map((p, i) => <div key={i} className="grid grid-cols-[40px_1fr_30px] items-center gap-2"><span className="text-center text-xs text-muted-foreground">#{i + 1}</span><Input type="number" step="0.01" placeholder="kg" value={p} onChange={e => setPallets(ps => ps.map((x, j) => j === i ? e.target.value : x))} /><span className="text-xs text-muted-foreground">kg</span></div>)}</div>
-            <div className="mt-4 flex items-center justify-between rounded-md bg-secondary px-4 py-3"><span className="text-sm">Pesha totale</span><span className="text-2xl font-semibold tabular">{sum.toFixed(2)} kg</span></div>
-            <div className={cn("mt-2 flex justify-between rounded-md px-3 py-2 text-xs", sum > remainingKg(ship) + 0.0005 ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{sum > remainingKg(ship) + 0.0005 ? "Më shumë kg se stoku i lotit!" : "Kg në stok te ky lot"}</span><span className="tabular">{fmtNum(sum, 2)} / {fmtNum(remainingKg(ship), 2)} kg</span></div>
+            <div className="mb-3 flex items-center gap-3"><Label className="mb-0">Numri i paletave</Label><Input type="number" inputMode="numeric" className="w-24" value={palletN} onChange={e => { const v = e.target.value.replace(/\D/g, ""); setPalletN(v); const n = Math.min(40, parseInt(v, 10)); if (n >= 1) setPallets(p => Array.from({ length: n }, (_, i) => p[i] ?? "")); }} onBlur={() => { if (!(parseInt(palletN, 10) >= 1)) setPalletN(String(pallets.length)); else if (parseInt(palletN, 10) > 40) setPalletN("40"); }} /></div>
+            <div className="space-y-2">{pallets.map((p, i) => <div key={i} className="grid grid-cols-[40px_1fr_30px] items-center gap-2"><span className="text-center text-xs text-muted-foreground">#{i + 1}</span><DecimalInput placeholder="kg" value={p} onChange={e => setPallets(ps => ps.map((x, j) => j === i ? e.target.value : x))} /><span className="text-xs text-muted-foreground">kg</span></div>)}</div>
+            <div className="mt-4 flex items-center justify-between rounded-md bg-secondary px-4 py-3"><span className="text-sm">Pesha totale</span><span className="text-2xl font-semibold tabular">{fmtNum(sum, 3)} kg</span></div>
+            <div className={cn("mt-2 flex justify-between rounded-md px-3 py-2 text-xs", sum > remainingKg(ship) + 0.0005 ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{sum > remainingKg(ship) + 0.0005 ? "Më shumë kg se stoku i lotit!" : "Kg në stok te ky lot"}</span><span className="tabular">{fmtNum(sum, 3)} / {fmtNum(remainingKg(ship), 3)} kg</span></div>
             <Button variant="outline" size="sm" className="mt-2 w-full" disabled={!sum} onClick={printWeights}><FileText /> Gjenero PDF me peshat</Button>
             <Button variant="exit" size="lg" className="mt-2 w-full" disabled={!sum || sum > remainingKg(ship) + 0.0005} onClick={() => openPrice(sum, pallets.filter(p => +p > 0).length)}>Vazhdo te çmimi <ArrowRight /></Button>
           </div>
@@ -225,11 +236,11 @@ export default function DaljePage() {
           <div className="max-w-md rounded-lg border bg-card p-5">
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Numri i {unit === "paleta" ? "paletave" : "kartonave"}{!countKnown && " (opsional)"}</Label><Input type="number" inputMode="numeric" step="1" min="1" autoFocus value={totN} onChange={e => setTotN(e.target.value)} className="h-14 text-center text-xl font-semibold" placeholder="0" /></div>
-              <div><Label>Pesha totale (kg)</Label><Input type="number" inputMode="decimal" step="0.001" min="0.001" value={totKg} onChange={e => setTotKg(e.target.value)} className="h-14 text-center text-xl font-semibold" placeholder="0.000" /></div>
+              <div><Label>Pesha totale (kg)</Label><DecimalInput value={totKg} onChange={e => setTotKg(e.target.value)} className="h-14 text-center text-xl font-semibold" placeholder="0.000" /></div>
             </div>
             {totN && !validN && <p className="mt-2 text-xs text-danger">Numri duhet të jetë një numër i plotë pozitiv.</p>}
             {totKg && !validKg && <p className="mt-2 text-xs text-danger">Pesha duhet të jetë pozitive, me maksimum 3 shifra pas presjes.</p>}
-            <div className="mt-4 flex items-center justify-center gap-4 rounded-md bg-secondary p-4 tabular"><Big v={Number.isFinite(kg) ? kg.toFixed(3) : "—"} l="kg total" accent /><span className="text-muted-foreground">÷</span><Big v={totN.trim() ? String(n) : "—"} l={unit} /><span className="text-muted-foreground">=</span><Big v={n > 0 && validN && Number.isFinite(kg) ? (kg / n).toFixed(2) : "—"} l={unit === "paleta" ? "kg / paletë (mes.)" : "kg / karton (mes.)"} /></div>
+            <div className="mt-4 flex items-center justify-center gap-4 rounded-md bg-secondary p-4 tabular"><Big v={Number.isFinite(kg) ? fmtNum(kg, 3) : "—"} l="kg total" accent /><span className="text-muted-foreground">÷</span><Big v={totN.trim() ? String(n) : "—"} l={unit} /><span className="text-muted-foreground">=</span><Big v={n > 0 && validN && Number.isFinite(kg) ? fmtNum(kg / n, 2) : "—"} l={unit === "paleta" ? "kg / paletë (mes.)" : "kg / karton (mes.)"} /></div>
             {countKnown && <div className={cn("mt-3 flex justify-between rounded-md px-3 py-2 text-xs", overN ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{overN ? `Më shumë ${unit} se stoku i lotit!` : `${unit === "paleta" ? "Paleta" : "Kartona"} në stok te ky lot`}</span><span>{n} / {(remainingCount(ship) ?? 0)}</span></div>}
             <div className={cn("mt-1.5 flex justify-between rounded-md px-3 py-2 text-xs", overKg ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{overKg ? "Më shumë kg se stoku i lotit!" : "Kg në stok te ky lot"}</span><span className="tabular">{Number.isFinite(kg) ? fmtNum(kg, 3) : "—"} / {fmtNum(remainingKg(ship), 3)}</span></div>
             <p className="mt-3 text-xs text-muted-foreground">Shkruaj shifrat siç janë në faturë. Stoku zbritet me peshën totale; peshat e secilit {unit === "paleta" ? "paletë" : "karton"} nuk ruhen.</p>
@@ -241,8 +252,8 @@ export default function DaljePage() {
         <motion.div key="price" {...fade}>
           <PageHeader title={`Çmimi — ${product.name}`} right={<Button variant="ghost" onClick={() => setStep(method === "TOTAL" ? "total" : method === "FIXED" ? "fixed" : method === "PALLET" ? "pallet" : "keypad")}><ArrowLeft /></Button>} />
           <div className="max-w-md">
-            <div className="rounded-lg border bg-card p-4 text-sm"><KV k="Dërgesa" v={`Lot ${lotOf(ship)}`} row /><KV k="Sasia" v={lineQty == null ? "E panjohur" : `${lineQty} ${unitOf(ship)}`} row /><KV k="Metoda" v={saleMethodLabel({ method, qty: lineQty, kg: lineKg, fixedKg: +fixedKg }, unitOf(ship))} row /><KV k="Pesha" v={<span className="text-exit">{fmtKg(lineKg)}</span>} row /><KV k="Kosto / kg" v={fmtNum(ship.costPerKg) + " Lek"} row /></div>
-            {ship.costPerKg == null && <p className="mt-2 text-sm text-warn">Kostoja nuk dihet; fitimi dhe marzhi nuk mund të llogariten.</p>}<Label className="mt-4">Çmimi i shitjes për kg (Lek)</Label><Input type="number" autoFocus value={price} onChange={e => setPrice(e.target.value)} className="h-14 text-xl font-semibold" placeholder="p.sh. 480" />
+            <div className="rounded-lg border bg-card p-4 text-sm"><KV k="Dërgesa" v={`Lot ${lotOf(ship)}`} row /><KV k="Sasia" v={lineQty == null ? "E panjohur" : `${lineQty} ${unitOf(ship)}`} row /><KV k="Metoda" v={saleMethodLabel({ method, qty: lineQty, kg: lineKg, fixedKg: +fixedKg }, unitOf(ship))} row /><KV k="Pesha" v={<span className="text-exit">{fmtKg(lineKg)}</span>} row /><KV k="Kosto / kg" v={fmtNum(ship.costPerKg, 2) + " Lek"} row /></div>
+            {ship.costPerKg == null && <p className="mt-2 text-sm text-warn">Kostoja nuk dihet; fitimi dhe marzhi nuk mund të llogariten.</p>}<Label className="mt-4">Çmimi i shitjes për kg (Lek)</Label><DecimalInput autoFocus value={price} onChange={e => setPrice(e.target.value)} className="h-14 text-xl font-semibold" placeholder="p.sh. 480" />
             <div className="mt-3 rounded-lg bg-exit/10 p-4 text-sm text-exit tabular"><div className="flex justify-between"><span>{fmtKg(lineKg)}</span><span>× {fmtNum(p)} Lek</span></div><div className="mt-1 flex items-center justify-between border-t border-exit/30 pt-3"><span className="font-medium">Vlera e produktit</span><span className="text-xl font-semibold">{fmtLek(lineKg * p)}</span></div>{p > 0 && ship.costPerKg != null && <div className="mt-1 text-xs opacity-80">Marzhi: {fmtLek(lineKg * (p - ship.costPerKg))} ({(((p - ship.costPerKg) / p) * 100).toFixed(1)}%)</div>}</div>
             <Button variant="exit" size="lg" className="mt-3 w-full" disabled={!p} onClick={addLine}><Plus /> Shto në porosi</Button>
           </div>
@@ -266,7 +277,11 @@ export default function DaljePage() {
             <div className="flex gap-2"><Input type="date" value={saleDate} max={today} min={minDate || undefined} onChange={e => { requestId.current = null; setSaleDate(e.target.value); }} className="flex-1" />{saleDate !== today && <Button variant="outline" onClick={() => { requestId.current = null; setSaleDate(today); }}>Sot</Button>}</div>
             {dateErr ? <p className="mt-1.5 text-xs text-danger">{dateErr}</p> : saleDate !== today ? <p className="mt-1.5 text-xs text-warn">Shitje e mëparshme — do të regjistrohet më {fmtDate(saleDate)} (llogaritet në atë ditë e muaj te Financa).</p> : <p className="mt-1.5 text-xs text-muted-foreground">Sot. Ndryshoje nëse po regjistron një faturë të një dite tjetër.</p>}
             <div className="mt-4 rounded-lg bg-exit/10 p-4 text-sm text-exit tabular"><div className="flex justify-between py-1"><span>Produkte</span><span>{lines.length}</span></div><div className="flex justify-between py-1"><span>Pesha totale</span><span>{fmtKg(totalKg)}</span></div><div className="mt-1 flex items-center justify-between border-t border-exit/30 pt-3"><span className="font-medium">Vlera totale</span><span className="text-xl font-semibold">{fmtLek(totalVal)}</span></div></div>
-            <Button variant="exit" size="lg" className="mt-3 w-full" disabled={!clientId || !!dateErr} onClick={finalize}><Check /> Finalizo porosinë</Button>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Button variant="outline" size="lg" disabled={!clientId || !!dateErr || saving} onClick={() => finalize(true)}><Printer /> Printo faturën</Button>
+              <Button variant="exit" size="lg" disabled={!clientId || !!dateErr || saving} onClick={() => finalize()}><Check /> {saving ? "Po ruhet…" : "Finalizo porosinë"}</Button>
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">«Printo faturën» e ruan porosinë dhe hap fletën e porosisë me numrin e saj për ta printuar ose ruajtur si PDF.</p>
           </div>
         </motion.div>
       )}
@@ -274,11 +289,11 @@ export default function DaljePage() {
       {step === "done" && doneSale && (
         <motion.div key="done" {...fade} className="mx-auto max-w-md py-8 text-center">
           <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 260, damping: 18 }} className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-entry/40 bg-entry/15"><Check className="h-8 w-8 text-entry" /></motion.div>
-          <h2 className="text-lg font-semibold">Porosia u finalizua</h2>
+          <h2 className="text-lg font-semibold">Porosia u finalizua{doneSale.receiptNr != null ? ` · Fletë porosi nr. ${doneSale.receiptNr}` : ""}</h2>
           <p className="mb-5 text-sm text-muted-foreground">Klienti: {store.clients.find(c => c.id === clientId)?.name} · {fmtDate(saleDate)}</p>
           <div className="rounded-lg border bg-card p-4 text-left text-sm">{lines.map((l, i) => <div key={i} className="flex justify-between border-b py-2 last:border-0"><span>{pname(l.productId)} <span className="text-muted-foreground">({fmtKg(l.kg)})</span></span><span className="tabular">{fmtLek(l.total)}</span></div>)}<div className="mt-2 flex justify-between border-t pt-3 font-medium"><span>Totali</span><span className="text-exit tabular">{fmtLek(doneSale.totalValue)}</span></div></div>
           <p className="mt-3 text-xs text-muted-foreground">Stoku u përditësua — kg u hoqën nga dërgesat përkatëse dhe lëvizjet u regjistruan.</p>
-          <Button variant="exit" size="lg" className="mt-4 w-full" onClick={reset}>Porosi e re</Button>
+          <div className="mt-4 grid grid-cols-2 gap-2"><Button variant="outline" size="lg" onClick={() => { if (!printSale(doneSale, store.clients, store.products)) toast.error("Shfletuesi bllokoi dritaren e printimit. Lejo dritaret pop-up për këtë faqe."); }}><Printer /> Printo faturën</Button><Button variant="exit" size="lg" onClick={reset}>Porosi e re</Button></div>
         </motion.div>
       )}
     </AnimatePresence>

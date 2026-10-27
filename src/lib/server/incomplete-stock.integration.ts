@@ -201,6 +201,13 @@ async function main() {
     assert.equal(saleRow.kg, 8);
     assert.equal(saleRow.value, 40);
     assert.equal((saleRow.lines as unknown[]).length, 2);
+    // Order sheet numbers: every saved sale gets the next number (1, 2, 3…) with no gaps or repeats, even when two
+    // sales on different loads are saved at the same moment; rejected sales use none up and cancelled ones keep theirs.
+    await Promise.all([t1, t2].map(id => executeCommand(commandSchema.parse({ type: "finalizeSale", data: { clientId: client.id, date: today, lines: [{ productId: product.id, shipmentId: id, method: "TOTAL", qty: null, kg: 1, pricePerKg: 5 }] } }), user.id, randomUUID())));
+    const numbers = (await db.sale.findMany({ select: { receiptNr: true } })).map(x => x.receiptNr!).sort((a, b) => a - b);
+    assert.deepEqual(numbers, numbers.map((_, i) => i + 1));
+    assert.ok((await db.sale.findUniqueOrThrow({ where: { id: wrongSale } })).receiptNr! > 0);
+    assert.equal((await getState()).sales.find(x => x.id === twoLines)?.receiptNr, (await db.sale.findUniqueOrThrow({ where: { id: twoLines } })).receiptNr);
     console.log("Integration passed: migration preservation, incomplete receiving, kg-only sales, unit/kg overdraw protection, idempotency, browsing, missing-cost reporting, enrichment, immutable ledger, concurrent sales, cancelled sales and kg corrections.");
   } finally {
     shared.frigocoldDb = previous;

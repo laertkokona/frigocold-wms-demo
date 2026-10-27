@@ -88,7 +88,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         WHERE sh.cancelled_at IS NULL
         UNION ALL
-        SELECT sl.id, sa.id::text, sl.shipment_id, sl.price_per_kg, NULL::varchar, sa.date, 'OUT'::text, p.name, COALESCE(l.lots, ''), c.name,
+        SELECT sl.id, sa.id::text, sl.shipment_id, sl.price_per_kg, sa.receipt_nr::varchar, sa.date, 'OUT'::text, p.name, COALESCE(l.lots, ''), c.name,
           sl.qty, sl.kg, sl.kg * sl.price_per_kg,
           CASE sl.method WHEN 'FIXED' THEN 'peshë fikse' WHEN 'VARIABLE' THEN 'peshë e ndryshme' WHEN 'TOTAL' THEN 'peshë totale' ELSE 'paleta' END
         FROM sale_lines sl JOIN sales sa ON sa.id = sl.sale_id
@@ -97,7 +97,7 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         WHERE sa.cancelled_at IS NULL
         UNION ALL
-        SELECT sl.id, sa.id::text, sl.shipment_id, sl.price_per_kg, NULL::varchar, sa.date, 'ANUL'::text, p.name, COALESCE(l.lots, ''), c.name,
+        SELECT sl.id, sa.id::text, sl.shipment_id, sl.price_per_kg, sa.receipt_nr::varchar, sa.date, 'ANUL'::text, p.name, COALESCE(l.lots, ''), c.name,
           sl.qty, sl.kg, sl.kg * sl.price_per_kg,
           CONCAT('shitje e anuluar më ', TO_CHAR((sa.cancelled_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Tirane', 'DD/MM/YYYY'), ' — ', sa.cancel_reason)
         FROM sale_lines sl JOIN sales sa ON sa.id = sl.sale_id

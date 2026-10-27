@@ -33,11 +33,11 @@ export default function SupplierDetail() {
         {[["Dërgesa", String(mine.length)], ["Kg blerë", fmtKg(kg, 0)], ["Shpenzim total", fmtLek(spend)], ["Kosto mes. / kg", kg && spend != null ? fmtNum(spend / kg) + " Lek" : "—"], ["Marzh i realizuar", revenue && cogs != null ? ((revenue - cogs) / revenue * 100).toFixed(1) + "%" : "—"]].map(([k, v]) =>
           <div key={k} className="rounded-lg bg-card p-4"><div className="text-[11px] text-muted-foreground">{k}</div><div className="mt-1 text-lg font-semibold tabular">{v}</div></div>)}
       </div>
-      {shortKg != null && shortKg > 0.01 && <p className="mb-4 text-xs text-warn">Mungesë peshe kumulative (dokument − faktik): {fmtNum(shortKg, 1)} kg</p>}
+      {shortKg != null && shortKg > 0.01 && <p className="mb-4 text-xs text-warn">Mungesë peshe kumulative (dokument − faktik): {fmtNum(shortKg, 3)} kg</p>}
       <Card><CardHeader><CardTitle>Dërgesat</CardTitle></CardHeader><CardContent className="space-y-1.5">
         {mine.map(s => { const d = daysUntil(s.expFrom), rem = remainingKg(s); return (
           <Link key={s.id} href={`/inventari/${s.id}`} className="flex items-center justify-between rounded-md border px-3 py-2.5 text-sm hover:bg-accent/40">
-            <div><div className="font-medium">Lot {s.lots.map(l => l.lotNumber).join(", ")} · {products.find(p => p.id === s.productId)?.name}</div><div className="text-xs text-muted-foreground">Porosia {s.orderNr} · hyri {fmtDate(s.entryDate)} · {s.countActual} {s.loadType === "PALLET" ? "paleta" : "kartona"} · {fmtKg(s.netKgActual, 0)} · {fmtNum(s.costPerKg)} Lek/kg</div></div>
+            <div><div className="font-medium">Lot {s.lots.map(l => l.lotNumber).join(", ")} · {products.find(p => p.id === s.productId)?.name}</div><div className="text-xs text-muted-foreground">Porosia {s.orderNr} · hyri {fmtDate(s.entryDate)} · {s.countActual} {s.loadType === "PALLET" ? "paleta" : "kartona"} · {fmtKg(s.netKgActual, 0)} · {fmtNum(s.costPerKg, 2)} Lek/kg</div></div>
             <div className="flex items-center gap-3"><span className="text-right tabular text-xs text-muted-foreground">{rem > 0 ? `${fmtKg(rem, 0)} mbetur` : "shitur"}</span>{rem > 0 && <Badge variant={d < 60 ? "danger" : d < 180 ? "warn" : "entry"}>{fmtMonth(s.expFrom)}</Badge>}<span className="tabular font-medium">{fmtLek(s.totalCost)}</span></div>
           </Link>); })}
         {!mine.length && <p className="text-sm text-muted-foreground">Asnjë dërgesë nga ky furnizues ende.</p>}

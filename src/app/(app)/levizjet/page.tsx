@@ -22,7 +22,7 @@ const csvCell = (value: string | number) => `"${String(value).replaceAll('"', '"
 /** What the row is, in one line: who it was with and what it contained. */
 function summary(r: Row) {
   const many = r.items > 1;
-  if (r.type === "OUT" || r.type === "ANUL") return { title: r.party ?? "—", sub: `${many ? `${r.items} artikuj: ` : ""}${r.products}${r.type === "ANUL" ? ` · ${r.method}` : ""}` };
+  if (r.type === "OUT" || r.type === "ANUL") return { title: r.party ?? "—", sub: `${r.ref ? `Fletë porosi nr. ${r.ref} · ` : ""}${many ? `${r.items} artikuj: ` : ""}${r.products}${r.type === "ANUL" ? ` · ${r.method}` : ""}` };
   if (r.type === "IN") return { title: r.party ?? "Pa furnizues", sub: `${r.ref ? `Porosia ${r.ref} · ` : ""}${many ? `${r.items} ngarkesa: ` : ""}${r.products}` };
   if (r.type === "RET") return { title: r.party ?? "—", sub: `${r.products} · ${r.method}` };
   return { title: r.products, sub: r.method };
@@ -48,7 +48,7 @@ export default function Levizjet() {
           <td className="px-3 py-2"><Badge variant={TYPE_BADGE[r.type]}>{TYPE_LABEL[r.type]}</Badge></td>
           <td className="px-3 py-2"><div className="font-medium">{s.title}</div><div className="max-w-md truncate text-xs text-muted-foreground" title={s.sub}>{s.sub}</div></td>
           <td className="px-3 py-2 text-right tabular">{r.qty ?? "—"}</td>
-          <td className={cn("px-3 py-2 text-right tabular", struck && "text-muted-foreground line-through")}>{r.type === "KOR" && r.kg > 0 ? "+" : ""}{fmtNum(r.kg, 2)}</td>
+          <td className={cn("px-3 py-2 text-right tabular", struck && "text-muted-foreground line-through")}>{r.type === "KOR" && r.kg > 0 ? "+" : ""}{fmtNum(r.kg, 3)}</td>
           <td className="px-3 py-2 text-right tabular">{fmtLek(r.value)}</td>
         </tr>
         {isOpen && <tr className="border-b bg-secondary/30"><td colSpan={6} className="px-3 py-3">
@@ -57,11 +57,11 @@ export default function Levizjet() {
               <td className="py-1.5 pl-6"><Link href={`/inventari/${l.sid}`} className="font-medium hover:underline" onClick={e => e.stopPropagation()}>{l.product}</Link>{l.lot ? <span className="text-muted-foreground"> · Lot {l.lot}</span> : null}</td>
               <td className="py-1.5 text-muted-foreground">{l.method}</td>
               <td className="py-1.5 text-right tabular">{l.qty ?? "—"}</td>
-              <td className="py-1.5 text-right tabular">{fmtNum(Number(l.kg), 2)}</td>
+              <td className="py-1.5 text-right tabular">{fmtNum(Number(l.kg), 3)}</td>
               <td className="py-1.5 text-right tabular">{l.price == null ? "—" : fmtNum(Number(l.price), 2)}</td>
               <td className="py-1.5 text-right tabular">{fmtLek(l.value == null ? null : Number(l.value))}</td>
             </tr>)}</tbody>
-            {r.lines.length > 1 && <tfoot><tr className="border-t font-medium"><td className="py-1.5 pl-6" colSpan={2}>Gjithsej</td><td className="py-1.5 text-right tabular">{r.qty ?? "—"}</td><td className="py-1.5 text-right tabular">{fmtNum(r.kg, 2)}</td><td /><td className="py-1.5 text-right tabular">{fmtLek(r.value)}</td></tr></tfoot>}
+            {r.lines.length > 1 && <tfoot><tr className="border-t font-medium"><td className="py-1.5 pl-6" colSpan={2}>Gjithsej</td><td className="py-1.5 text-right tabular">{r.qty ?? "—"}</td><td className="py-1.5 text-right tabular">{fmtNum(r.kg, 3)}</td><td /><td className="py-1.5 text-right tabular">{fmtLek(r.value)}</td></tr></tfoot>}
           </table>
         </td></tr>}
       </Fragment>; })}</tbody></table>
