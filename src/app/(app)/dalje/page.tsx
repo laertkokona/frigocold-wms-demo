@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRight, Check, ChevronRight, Delete, Equal, FileText, Keyboard, Layers, Plus, Receipt, UserCheck, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronRight, Delete, Equal, FileText, Keyboard, Layers, Plus, Printer, Receipt, UserCheck, X } from "lucide-react";
+import { openReceiptWindow, receiptFor, printSale, showReceipt } from "@/lib/print-receipt";
 import { Button } from "@/components/ui/button";
 import { DecimalInput, Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +14,7 @@ import { SearchBox, matches } from "@/components/search-box";
 import { remainingCount, remainingKg, useStore } from "@/lib/store";
 import { fefoOrder } from "@/lib/calc";
 import { loadSpecLabel, loadWeightType, shipmentLabel } from "@/lib/stock";
-import type { Product, SaleLine, SaleMethod, Shipment } from "@/lib/types";
+import type { Product, Sale, SaleLine, SaleMethod, Shipment } from "@/lib/types";
 import { cn, daysUntil, fmtDate, fmtKg, fmtLek, fmtMonth, fmtNum, saleMethodLabel, todayInTirane } from "@/lib/utils";
 
 type Step = "order" | "product" | "shipment" | "method" | "fixed" | "format" | "keypad" | "pallet" | "total" | "price" | "client" | "done";
@@ -38,7 +39,8 @@ export default function DaljePage() {
   const [price, setPrice] = useState("");
   const [clientId, setClientId] = useState(""); const [saleDate, setSaleDate] = useState(todayInTirane);
   const [lineKg, setLineKg] = useState(0); const [lineQty, setLineQty] = useState<number | null>(null);
-  const [doneSale, setDoneSale] = useState<{ id: string; totalKg: number; totalValue: number } | null>(null);
+  const [doneSale, setDoneSale] = useState<Sale | null>(null);
+  const [saving, setSaving] = useState(false);
   const requestId = useRef<string | null>(null);
 
   const totalKg = lines.reduce((a, l) => a + l.kg, 0), totalVal = lines.reduce((a, l) => a + l.total, 0);
@@ -67,13 +69,20 @@ export default function DaljePage() {
     setLines(ls => [...ls, { productId: product.id, shipmentId: ship.id, method, qty: lineQty, kg: +lineKg.toFixed(3), pricePerKg: p, total: lineKg * p, weights: method === "VARIABLE" ? weights : method === "PALLET" ? pallets.map(Number).filter(n => n > 0) : undefined, fixedKg: method === "FIXED" ? +fixedKg : undefined }]);
     toast.success(`${product.name} u shtua në porosi`); setStep("order");
   };
-  const finalize = async () => {
+  /** Saves the sale; with `print`, also prints its order sheet ("Fletë porosi"), which gets its number when the sale is saved. */
+  const finalize = async (print = false) => {
+    if (saving) return;
+    // The print window must be opened during the click itself, or the browser blocks it; it is filled once the sale is saved.
+    const win = print ? openReceiptWindow() : null;
+    setSaving(true);
     try {
       requestId.current ??= crypto.randomUUID();
       const s = await store.finalizeSale({ clientId, lines, totalKg: +totalKg.toFixed(2), totalValue: totalVal, requestId: requestId.current, date: saleDate });
       requestId.current = null;
-      setDoneSale({ id: s.id, totalKg: s.totalKg, totalValue: s.totalValue }); setStep("done"); toast.success("Porosia u finalizua");
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Porosia nuk u finalizua"); }
+      setDoneSale(s); setStep("done"); toast.success("Porosia u finalizua");
+      if (print && !showReceipt(win, receiptFor(s, store.clients, store.products))) toast("Shfletuesi bllokoi dritaren e printimit. Shtyp «Printo faturën» më poshtë.");
+    } catch (e) { win?.close(); toast.error(e instanceof Error ? e.message : "Porosia nuk u finalizua"); }
+    finally { setSaving(false); }
   };
   const reset = () => { requestId.current = null; setLines([]); setProduct(null); setShip(null); setWeights([]); setBuf(""); setClientId(""); setSaleDate(todayInTirane()); setDoneSale(null); setStep("order"); };
   const printWeights = () => {
@@ -268,7 +277,11 @@ export default function DaljePage() {
             <div className="flex gap-2"><Input type="date" value={saleDate} max={today} min={minDate || undefined} onChange={e => { requestId.current = null; setSaleDate(e.target.value); }} className="flex-1" />{saleDate !== today && <Button variant="outline" onClick={() => { requestId.current = null; setSaleDate(today); }}>Sot</Button>}</div>
             {dateErr ? <p className="mt-1.5 text-xs text-danger">{dateErr}</p> : saleDate !== today ? <p className="mt-1.5 text-xs text-warn">Shitje e mëparshme — do të regjistrohet më {fmtDate(saleDate)} (llogaritet në atë ditë e muaj te Financa).</p> : <p className="mt-1.5 text-xs text-muted-foreground">Sot. Ndryshoje nëse po regjistron një faturë të një dite tjetër.</p>}
             <div className="mt-4 rounded-lg bg-exit/10 p-4 text-sm text-exit tabular"><div className="flex justify-between py-1"><span>Produkte</span><span>{lines.length}</span></div><div className="flex justify-between py-1"><span>Pesha totale</span><span>{fmtKg(totalKg)}</span></div><div className="mt-1 flex items-center justify-between border-t border-exit/30 pt-3"><span className="font-medium">Vlera totale</span><span className="text-xl font-semibold">{fmtLek(totalVal)}</span></div></div>
-            <Button variant="exit" size="lg" className="mt-3 w-full" disabled={!clientId || !!dateErr} onClick={finalize}><Check /> Finalizo porosinë</Button>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Button variant="outline" size="lg" disabled={!clientId || !!dateErr || saving} onClick={() => finalize(true)}><Printer /> Printo faturën</Button>
+              <Button variant="exit" size="lg" disabled={!clientId || !!dateErr || saving} onClick={() => finalize()}><Check /> {saving ? "Po ruhet…" : "Finalizo porosinë"}</Button>
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">«Printo faturën» e ruan porosinë dhe hap fletën e porosisë me numrin e saj për ta printuar ose ruajtur si PDF.</p>
           </div>
         </motion.div>
       )}
@@ -276,11 +289,11 @@ export default function DaljePage() {
       {step === "done" && doneSale && (
         <motion.div key="done" {...fade} className="mx-auto max-w-md py-8 text-center">
           <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 260, damping: 18 }} className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-entry/40 bg-entry/15"><Check className="h-8 w-8 text-entry" /></motion.div>
-          <h2 className="text-lg font-semibold">Porosia u finalizua</h2>
+          <h2 className="text-lg font-semibold">Porosia u finalizua{doneSale.receiptNr != null ? ` · Fletë porosi nr. ${doneSale.receiptNr}` : ""}</h2>
           <p className="mb-5 text-sm text-muted-foreground">Klienti: {store.clients.find(c => c.id === clientId)?.name} · {fmtDate(saleDate)}</p>
           <div className="rounded-lg border bg-card p-4 text-left text-sm">{lines.map((l, i) => <div key={i} className="flex justify-between border-b py-2 last:border-0"><span>{pname(l.productId)} <span className="text-muted-foreground">({fmtKg(l.kg)})</span></span><span className="tabular">{fmtLek(l.total)}</span></div>)}<div className="mt-2 flex justify-between border-t pt-3 font-medium"><span>Totali</span><span className="text-exit tabular">{fmtLek(doneSale.totalValue)}</span></div></div>
           <p className="mt-3 text-xs text-muted-foreground">Stoku u përditësua — kg u hoqën nga dërgesat përkatëse dhe lëvizjet u regjistruan.</p>
-          <Button variant="exit" size="lg" className="mt-4 w-full" onClick={reset}>Porosi e re</Button>
+          <div className="mt-4 grid grid-cols-2 gap-2"><Button variant="outline" size="lg" onClick={() => { if (!printSale(doneSale, store.clients, store.products)) toast.error("Shfletuesi bllokoi dritaren e printimit. Lejo dritaret pop-up për këtë faqe."); }}><Printer /> Printo faturën</Button><Button variant="exit" size="lg" onClick={reset}>Porosi e re</Button></div>
         </motion.div>
       )}
     </AnimatePresence>

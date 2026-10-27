@@ -22,7 +22,7 @@ const csvCell = (value: string | number) => `"${String(value).replaceAll('"', '"
 /** What the row is, in one line: who it was with and what it contained. */
 function summary(r: Row) {
   const many = r.items > 1;
-  if (r.type === "OUT" || r.type === "ANUL") return { title: r.party ?? "—", sub: `${many ? `${r.items} artikuj: ` : ""}${r.products}${r.type === "ANUL" ? ` · ${r.method}` : ""}` };
+  if (r.type === "OUT" || r.type === "ANUL") return { title: r.party ?? "—", sub: `${r.ref ? `Fletë porosi nr. ${r.ref} · ` : ""}${many ? `${r.items} artikuj: ` : ""}${r.products}${r.type === "ANUL" ? ` · ${r.method}` : ""}` };
   if (r.type === "IN") return { title: r.party ?? "Pa furnizues", sub: `${r.ref ? `Porosia ${r.ref} · ` : ""}${many ? `${r.items} ngarkesa: ` : ""}${r.products}` };
   if (r.type === "RET") return { title: r.party ?? "—", sub: `${r.products} · ${r.method}` };
   return { title: r.products, sub: r.method };

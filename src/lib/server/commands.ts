@@ -287,7 +287,11 @@ export async function executeCommand(command: Command, userId: string, requestId
         const moved = await tx.movement.groupBy({ by: ["shipmentId"], where: { shipmentId: { in: ids } }, _sum: { kg: true, qty: true } });
         const balance = new Map(moved.map(m => [m.shipmentId, { kg: m._sum.kg?.toNumber() ?? 0, qty: byId.get(m.shipmentId)?.countActual == null ? null : m._sum.qty ?? 0 }]));
         assertAvailable(required, balance);
-        const created = await tx.sale.create({ data: { clientId, date: saleDate } });
+        // Order sheet numbers run 1, 2, 3… with no gaps: the next number is taken under a transaction-wide lock,
+        // after every check has passed, so a rejected sale never uses one up.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(7340001)`;
+        const [{ next }] = await tx.$queryRaw<{ next: number }[]>`SELECT (COALESCE(MAX(receipt_nr), 0) + 1)::int AS next FROM sales`;
+        const created = await tx.sale.create({ data: { clientId, date: saleDate, receiptNr: Number(next) } });
         for (const l of lines) {
           await tx.saleLine.create({ data: { saleId: created.id, shipmentId: l.shipmentId, method: l.method, qty: l.qty, kg: l.kg, pricePerKg: l.pricePerKg, weights: l.weights ?? Prisma.JsonNull, fixedKg: l.fixedKg } });
           await tx.movement.create({ data: { shipmentId: l.shipmentId, saleId: created.id, userId, type: "OUT", kg: -l.kg, qty: l.qty == null ? null : -l.qty } });

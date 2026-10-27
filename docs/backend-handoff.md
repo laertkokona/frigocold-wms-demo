@@ -83,3 +83,9 @@ Receiving and sale requests carry an idempotency key so a repeat request after a
 ## Lëvizjet grouped by order (no migration)
 
 - The movements browse now returns one row per order instead of one per line: a sale (`gid` = sale id) with all its lines, a truck received from a supplier (same entry date, supplier and order number) with all its loads, and returns, shortages and kg corrections as single rows. Each row carries `items`, summed `qty`/`kg`/`value` (value is null if any line's cost is unknown), the product list, the order number (`ref`) and its `lines` (JSON) for the expandable detail. Type filters apply per line; search matches an order when any of its lines matches. Loads without a supplier are not grouped.
+
+## Order sheet ("Fletë porosi") and its numbers (migration `20261027000000_sale_receipt_numbers`)
+
+- `finalizeSale` gives each new sale the next order sheet number in `sales.receipt_nr` (1, 2, 3…). The number is taken after every check has passed, under a transaction-scoped advisory lock (`pg_advisory_xact_lock(7340001)`) and `MAX(receipt_nr) + 1`, so numbers have no gaps or repeats even when sales on different loads are saved at the same moment. Sales made before the migration keep `NULL`; a cancelled sale keeps its number. `/api/state` returns `receiptNr` on sales; Lëvizjet shows and searches it.
+- The sheet itself is generated in the browser (`src/lib/receipt.ts`, `src/lib/print-receipt.ts`): one A4 page, 12 product rows (more rows shrink to stay on one page), buyer, cartons, product category, kg, price, value, totals and the fixed terms. Dalje's last step has "Printo faturën" (saves the sale and prints its sheet) next to "Finalizo porosinë"; the done screen and the client page can reprint it.
+- The migration adds one nullable column and a unique index; it is idempotent. **Run `npm run db:deploy` before deploying this version.**
