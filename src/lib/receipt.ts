@@ -24,7 +24,7 @@ export type ReceiptCopy = "accounting" | "client";
 function sheetHtml(r: ReceiptData | null, copy: ReceiptCopy) {
   const lines = r?.lines ?? [];
   const rows = Math.max(ROWS, lines.length);
-  const rowMm = Math.min(10, (ROWS * 10) / rows);
+  const rowMm = Math.min(8.5, (ROWS * 8.5) / rows);
   const totalKg = lines.reduce((a, l) => a + l.kg, 0), totalValue = lines.reduce((a, l) => a + l.value, 0);
   const body = Array.from({ length: rows }, (_, i) => {
     const l = lines[i];
@@ -51,24 +51,29 @@ export function receiptHtml(r: ReceiptData | null, autoPrint = false, copies: Re
 @page{size:A4 portrait;margin:12mm}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}
-.sheet{width:186mm;height:271mm;display:flex;flex-direction:column;gap:5mm;overflow:hidden;break-after:page}
-.sheet:last-child{break-after:auto}
+/* No fixed height: phones (iPhone/Safari) print with their own margins and a smaller printable area, and a sheet
+   taller than that spilled onto an extra empty page. Each copy is kept well under the smallest common page area
+   (US Letter with wide margins), and the next copy starts on a new page. */
+.sheet{width:100%;max-width:186mm;margin:0 auto}
+.sheet>*+*{margin-top:4mm}
+.sheet+.sheet{break-before:page;page-break-before:always}
+.sheet table,.sheet .terms{break-inside:avoid;page-break-inside:avoid}
 table{border-collapse:collapse;width:100%}
 td,th{border:1.2px solid #111;padding:0 2.5mm;font-size:11pt}
-.head td{height:20mm}
+.head td{height:17mm}
 .head .corner{width:52mm;text-align:center;font-weight:700;font-size:12pt;letter-spacing:.5px}
 .head .t{text-align:center;font-weight:700;font-size:17pt;letter-spacing:.5px}
 .head .d{width:52mm;font-weight:700;font-size:12pt;white-space:nowrap;line-height:2}
 .head .d span{font-weight:400;border-bottom:1px solid #111;display:inline-block;min-width:30mm;padding:0 1mm}
-.buyer td{height:11mm;font-size:11pt}
+.buyer td{height:9mm;font-size:11pt}
 .buyer .k{width:52mm;font-weight:700}
-.items th{height:12mm;font-size:10.5pt;background:#f2f2f2;line-height:1.15}
+.items th{height:10mm;font-size:10.5pt;background:#f2f2f2;line-height:1.15}
 .items td.c{text-align:center}
 .items td.p{line-height:1.15}
 .items .sub{font-size:8.5pt;color:#333;max-height:2.3em;overflow:hidden}
 .items td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.items tfoot td{height:12mm;font-weight:700;background:#f2f2f2}
-.terms{border:1.2px solid #111;padding:3mm 4mm;font-size:9.5pt;line-height:1.35}
+.items tfoot td{height:10mm;font-weight:700;background:#f2f2f2}
+.terms{border:1.2px solid #111;padding:2.5mm 4mm;font-size:9pt;line-height:1.3}
 .terms ul{margin:0;padding-left:4mm}
 .terms li{margin:0 0 1mm}
 </style></head><body>${copies.map(c => sheetHtml(r, c)).join("\n")}${autoPrint ? "<script>window.onload=()=>window.print()</script>" : ""}</body></html>`;
