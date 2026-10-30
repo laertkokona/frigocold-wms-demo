@@ -48,13 +48,15 @@ function sheetHtml(r: ReceiptData | null, copy: ReceiptCopy) {
 export function receiptHtml(r: ReceiptData | null, autoPrint = false, copies: ReceiptCopy[] = ["accounting", "client"]) {
   const title = r ? `Fletë porosi${r.number != null ? ` nr. ${r.number}` : ""} — ${r.client.name} — ${fmtDate(r.date)}` : "Fletë porosi";
   return `<!doctype html><html lang="sq"><head><meta charset="utf-8"><title>${esc(title)}</title><style>
-@page{size:A4 portrait;margin:12mm}
+/* Zero page margin leaves the browser no room for its own header and footer (date, page title, the page's link,
+   page numbers), so they are not printed; each copy carries its own 12 mm margin instead. */
+@page{size:A4 portrait;margin:0}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}
 /* No fixed height: phones (iPhone/Safari) print with their own margins and a smaller printable area, and a sheet
    taller than that spilled onto an extra empty page. Each copy is kept well under the smallest common page area
    (US Letter with wide margins), and the next copy starts on a new page. */
-.sheet{width:100%;max-width:186mm;margin:0 auto}
+.sheet{width:100%;max-width:210mm;margin:0 auto;padding:12mm}
 .sheet>*+*{margin-top:4mm}
 .sheet+.sheet{break-before:page;page-break-before:always}
 .sheet table,.sheet .terms{break-inside:avoid;page-break-inside:avoid}
