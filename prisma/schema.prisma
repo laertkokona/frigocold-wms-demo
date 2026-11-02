@@ -17,6 +17,7 @@ model User {
   @@map("users")
   adjustments  StockAdjustment[]
   corrections  ShipmentCorrection[]
+  surpluses    StockSurplus[]
 }
 
 model LoginAttempt {
@@ -91,6 +92,7 @@ model Shipment {
   returnOfLine     SaleLine? @relation("ReturnOfLine", fields: [returnOfLineId], references: [id], onDelete: Restrict)
   adjustments      StockAdjustment[]
   corrections      ShipmentCorrection[]
+  surpluses        StockSurplus[]
   fixedKg     Decimal?  @map("fixed_kg") @db.Decimal(10, 3)
   origin      String?   @db.VarChar(100)
   specs       String?   @db.VarChar(200)
@@ -139,6 +141,7 @@ model Sale {
   client    Client     @relation(fields: [clientId], references: [id], onDelete: Restrict)
   lines     SaleLine[]
   movements Movement[]
+  surpluses StockSurplus[]
   @@index([clientId, date])
   @@map("sales")
 }
@@ -218,4 +221,25 @@ model ShipmentCorrection {
   user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
   @@index([shipmentId])
   @@map("shipment_corrections")
+}
+
+/// Surplus ("Tepricë"): kilograms (and units) a sale took beyond what the system had on the load, at no purchase
+/// cost. Mirrored by a SURPLUS movement; reversed (cancelledAt + a negative SURPLUS movement) if the sale is cancelled.
+model StockSurplus {
+  id          String    @id @default(uuid()) @db.Uuid
+  shipmentId  String    @map("shipment_id") @db.Uuid
+  saleId      String    @map("sale_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  kg          Decimal   @db.Decimal(12, 3)
+  qty         Int?
+  reason      String    @db.VarChar(300)
+  date        String    @db.VarChar(10)
+  cancelledAt DateTime? @map("cancelled_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  shipment    Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  sale        Sale      @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([shipmentId])
+  @@index([saleId])
+  @@map("stock_surpluses")
 }

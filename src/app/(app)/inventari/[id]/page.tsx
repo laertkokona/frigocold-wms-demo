@@ -22,7 +22,7 @@ import { daysUntil, fmtDate, fmtKg, fmtLek, fmtNum, saleMethodShort } from "@/li
 
 export default function ShipmentDetail() {
   const { id } = useParams<{ id: string }>();
-  const { shipments, products, suppliers, sales, clients, adjustments } = useStore();
+  const { shipments, products, suppliers, sales, clients, adjustments, surpluses } = useStore();
   const [edit, setEdit] = useState(false);
   const [cancel, setCancel] = useState(false);
   const [short, setShort] = useState(false);
@@ -36,6 +36,7 @@ export default function ShipmentDetail() {
   const netKg = out.reduce((a, l) => a + l.kg, 0);
   const revenue = out.reduce((a, l) => a + l.total, 0), soldCost = netKg === 0 ? 0 : s.costPerKg == null ? null : netKg * s.costPerKg;
   const shortages = adjustments.filter(a => a.shipmentId === s.id);
+  const extra = surpluses.filter(x => x.shipmentId === s.id);
   const origin = s.returnOf ? shipments.find(x => x.id === s.returnOf!.shipmentId) : undefined;
   const Row = ({ k, v }: { k: string; v: React.ReactNode }) => <div className="flex justify-between border-b py-2 text-sm last:border-0"><span className="text-muted-foreground">{k}</span><span className="font-medium tabular">{v}</span></div>;
   return (
@@ -63,11 +64,15 @@ export default function ShipmentDetail() {
           <Row k="Mbetur" v={<span className="text-entry">{fmtKg(remainingKg(s), 1)} · {remainingCount(s) == null ? "sasi e panjohur" : `${remainingCount(s)} ${unit}`}</span>} />
           <Row k="Shitur" v={`${fmtKg(s.soldKg, 1)}${s.countActual == null ? "" : ` · ${s.soldCount} ${unit}`}`} />
           {netKg < s.soldKg - 0.0005 && <Row k="Kthyer nga klientët" v={fmtKg(s.soldKg - netKg, 1)} />}
+          {(s.surplusKg ?? 0) > 0 && <Row k="Tepricë (shitur mbi stokun)" v={<span className="text-entry">+{fmtKg(s.surplusKg ?? 0)}{s.countActual != null && s.surplusCount ? ` · ${s.surplusCount} ${unit}` : ""}</span>} />}
           {(s.adjustedKg ?? 0) > 0 && <Row k="Mungesa të regjistruara" v={<span className="text-warn">{fmtKg(s.adjustedKg ?? 0, 1)}{s.countActual != null && s.adjustedCount ? ` · ${s.adjustedCount} ${unit}` : ""}</span>} />}
           <Row k="Të ardhura nga ky lot" v={fmtLek(revenue)} /><Row k="Fitim bruto deri tani" v={<span className="text-entry">{fmtLek(soldCost == null ? null : revenue - soldCost)}</span>} />
           <Row k="Vlera e mbetur (kosto)" v={fmtLek(remainingKg(s) === 0 ? 0 : s.costPerKg == null ? null : remainingKg(s) * s.costPerKg)} />
         </CardContent></Card>
       </div>
+      {extra.length > 0 && <Card className="mt-4"><CardHeader><CardTitle>Teprica e regjistruar</CardTitle></CardHeader><CardContent>
+        {extra.map(x => <div key={x.id} className="flex flex-wrap items-center justify-between gap-2 border-b py-2.5 text-sm last:border-0"><div><div className="font-medium"><Link className="hover:underline" href={`/klientet/${x.clientId}`}>{clients.find(c => c.id === x.clientId)?.name ?? "—"}</Link></div><div className="text-xs text-muted-foreground">{fmtDate(x.date)} · {x.reason}</div></div><div className="text-right tabular"><div className="text-entry">+{fmtKg(x.kg)}{x.qty ? ` · ${x.qty} ${unit}` : ""}</div><div className="text-xs text-muted-foreground">{s.costPerKg == null ? "kosto e panjohur" : `fitim ${fmtLek(x.kg * s.costPerKg)}`}</div></div></div>)}
+      </CardContent></Card>}
       {shortages.length > 0 && <Card className="mt-4"><CardHeader><CardTitle>Mungesat e regjistruara</CardTitle></CardHeader><CardContent>
         {shortages.map(a => <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 border-b py-2.5 text-sm last:border-0"><div><div className="font-medium">{SHORTAGE_LABELS[a.reason]}</div><div className="text-xs text-muted-foreground">{fmtDate(a.date)}{a.note ? ` · ${a.note}` : ""}</div></div><div className="text-right tabular"><div className="text-warn">−{fmtKg(a.kg)}{a.qty ? ` · ${a.qty} ${unit}` : ""}</div><div className="text-xs text-muted-foreground">{s.costPerKg == null ? "kosto e panjohur" : `humbje ${fmtLek(a.kg * s.costPerKg)}`}</div></div></div>)}
       </CardContent></Card>}

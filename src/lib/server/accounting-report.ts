@@ -3,14 +3,14 @@ import { getState } from "./state";
 import { sumCosts } from "@/lib/costs";
 
 export async function getAccountingReport(period: PeriodKey, selectedProduct: string, lotPage: number) {
-  const { sales, shipments, products, clients, suppliers, thresholds, adjustments } = await getState();
+  const { sales, shipments, products, clients, suppliers, thresholds, adjustments, surpluses } = await getState();
   const p = buildPeriod(period);
   const months = trailingMonths(8);
   const priceProd = products.some(product => product.id === selectedProduct) ? selectedProduct : products[0]?.id ?? "";
   const allLots = lotRows(shipments, products, suppliers, sales);
   const lotPageSize = 25;
   return {
-    p, cur: headline(sales, shipments, p.from, p.to, adjustments), prev: headline(sales, shipments, p.prevFrom, p.prevTo, adjustments),
+    p, cur: headline(sales, shipments, p.from, p.to, adjustments, surpluses), prev: headline(sales, shipments, p.prevFrom, p.prevTo, adjustments, surpluses),
     missingCostShipmentCount: shipments.filter(s => s.costPerKg == null).length,
     series: monthlyEcon(sales, shipments, months),
     byMonth: salesByMonth(sales, shipments, products),

@@ -12,7 +12,7 @@ const sorts: Record<BrowseKind, Record<string, string>> = {
   search: { date: 'date', title: 'title' },
 };
 
-const MOVEMENT_TYPES = ["IN", "OUT", "RET", "ADJ", "ANUL", "KOR"];
+const MOVEMENT_TYPES = ["IN", "OUT", "RET", "ADJ", "ANUL", "KOR", "TEP"];
 
 function baseQuery(p: BrowseParams): Prisma.Sql {
   const match = `%${p.q}%`;
@@ -122,6 +122,14 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         FROM stock_adjustments a JOIN shipments sh ON sh.id = a.shipment_id JOIN products p ON p.id = sh.product_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         WHERE sh.cancelled_at IS NULL
+        UNION ALL
+        -- Surplus ("Tepricë") taken by a sale beyond the recorded stock, with the sale's client and order sheet number.
+        SELECT x.id, x.id::text, x.shipment_id, sh.cost_per_kg, sa.receipt_nr::varchar, x.date, 'TEP'::text, p.name, COALESCE(l.lots, ''), c.name,
+          x.qty, x.kg, x.kg * sh.cost_per_kg, CONCAT('tepricë: ', x.reason)
+        FROM stock_surpluses x JOIN shipments sh ON sh.id = x.shipment_id JOIN products p ON p.id = sh.product_id
+        JOIN sales sa ON sa.id = x.sale_id JOIN clients c ON c.id = sa.client_id
+        LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
+        WHERE x.cancelled_at IS NULL AND sh.cancelled_at IS NULL
       ) g WHERE (${MOVEMENT_TYPES.includes(p.filter) ? p.filter : "ALL"} = 'ALL' OR g.type = ${MOVEMENT_TYPES.includes(p.filter) ? p.filter : "ALL"})
       GROUP BY g.gid, g.type
       HAVING BOOL_OR(g.product ILIKE ${match} OR g.lot ILIKE ${match} OR g.party ILIKE ${match} OR g.method ILIKE ${match} OR COALESCE(g.ref, '') ILIKE ${match})

@@ -36,6 +36,8 @@ export interface Shipment {
   soldCount: number;
   adjustedKg?: number;    // recorded shortages (kg written off)
   adjustedCount?: number;
+  surplusKg?: number;     // surplus ("Tepricë") taken by sales beyond what the system had (kg added back)
+  surplusCount?: number;
   /** Set when this load is goods a client returned: the sale line it came from and the credit given. */
   returnOf?: { lineId: string; saleId: string; clientId: string; shipmentId: string; saleDate: string; reason: string; pricePerKg: number };
   /** Corrections of the received kilograms, oldest first. */
@@ -45,13 +47,15 @@ export interface Shipment {
 export interface KgCorrection { kgBefore: number; kgAfter: number; docKgBefore: number | null; docKgAfter: number | null; note: string; date: string; }
 
 export type ShortageReason = "SUPPLIER" | "COUNT" | "UNRECORDED_SALE" | "DAMAGED" | "OTHER";
+/** Surplus ("Tepricë"): kg (and units) a sale took beyond what the system had on the load, at no purchase cost. */
+export interface StockSurplus { id: string; shipmentId: string; saleId: string; clientId: string; kg: number; qty: number | null; reason: string; date: string; }
 export interface StockAdjustment { id: string; shipmentId: string; kg: number; qty: number | null; reason: ShortageReason; note?: string; date: string; }
 
 export interface Draft {
   id: string;
   savedAt: string;
   productId: string;
-  data: Partial<Omit<Shipment, "id" | "soldKg" | "soldCount" | "adjustedKg" | "adjustedCount" | "returnOf" | "corrections">>;
+  data: Partial<Omit<Shipment, "id" | "soldKg" | "soldCount" | "adjustedKg" | "adjustedCount" | "surplusKg" | "surplusCount" | "returnOf" | "corrections">>;
 }
 
 export interface SaleLine {
@@ -65,6 +69,8 @@ export interface SaleLine {
   total: number;
   weights?: number[];
   fixedKg?: number;
+  /** Confirmed in Dalje when the line takes more than the load has left; the extra becomes surplus with this reason. */
+  surplusReason?: string;
 }
 /** isReturn: a client credit built from a return (negative kg and value), not an order.
  *  receiptNr: order sheet ("Fletë porosi") number; null for sales made before numbering began. */

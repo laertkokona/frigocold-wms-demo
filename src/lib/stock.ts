@@ -1,7 +1,7 @@
 import type { Shipment } from "./types";
 
-export const remainingKg = (s: Shipment) => Math.max(0, +(s.netKgActual - s.soldKg - (s.adjustedKg ?? 0)).toFixed(3));
-export const remainingCount = (s: Shipment) => s.countActual == null ? null : Math.max(0, s.countActual - s.soldCount - (s.adjustedCount ?? 0));
+export const remainingKg = (s: Shipment) => Math.max(0, +(s.netKgActual - s.soldKg - (s.adjustedKg ?? 0) + (s.surplusKg ?? 0)).toFixed(3));
+export const remainingCount = (s: Shipment) => s.countActual == null ? null : Math.max(0, s.countActual - s.soldCount - (s.adjustedCount ?? 0) + (s.surplusCount ?? 0));
 
 export const shipmentLabel = (s: Pick<Shipment, "id" | "lots"> & { returnOf?: Shipment["returnOf"] }) => (s.returnOf ? "Kthim · " : "") + (s.lots.length ? `Lot ${s.lots.map(l => l.lotNumber).join(", ")}` : `Ngarkesa ${s.id.slice(0, 8)}`);
 /** Missing data on a load. A client return has no supplier/order/lots of its own (they live on the original load). */

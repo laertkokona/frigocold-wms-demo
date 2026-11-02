@@ -29,6 +29,8 @@ const line = z.object({
   productId: id, shipmentId: id, method: z.enum(["FIXED", "VARIABLE", "PALLET", "TOTAL"]),
   qty: z.number().int().positive().nullable().default(null), kg: positive, pricePerKg: nonnegative,
   weights: z.array(positive).optional(), fixedKg: positive.optional(),
+  /** Set when the line may take more than the load has left: the extra is recorded as surplus ("Tepricë") with this reason. */
+  surplusReason: z.string().trim().min(1).max(300).optional(),
 });
 
 export const commandSchema = z.discriminatedUnion("type", [
@@ -227,6 +229,11 @@ export async function executeCommand(command: Command, userId: string, requestId
         if (sale.lines.some(l => l.returns.length)) throw new DomainError("This sale has client returns; cancel the returns first");
         for (const shipmentId of [...new Set(sale.lines.map(l => l.shipmentId))].sort()) await tx.$queryRaw`SELECT id FROM shipments WHERE id = ${shipmentId}::uuid FOR UPDATE`;
         for (const l of sale.lines) await tx.movement.create({ data: { shipmentId: l.shipmentId, saleId: sale.id, userId, type: "VOID", kg: l.kg, qty: l.qty } });
+        // Surplus that only existed because of this sale is reversed with it, so the load is back where it was.
+        for (const s of await tx.stockSurplus.findMany({ where: { saleId: sale.id, cancelledAt: null } })) {
+          await tx.movement.create({ data: { shipmentId: s.shipmentId, userId, type: "SURPLUS", kg: s.kg.negated(), qty: s.qty == null ? null : -s.qty } });
+          await tx.stockSurplus.update({ where: { id: s.id }, data: { cancelledAt: new Date() } });
+        }
         await tx.sale.update({ where: { id: sale.id }, data: { cancelledAt: new Date(), cancelReason: command.data.reason } });
       });
       return { id: command.id };
@@ -286,12 +293,29 @@ export async function executeCommand(command: Command, userId: string, requestId
         assertSaleDate(saleDate, today, shipments.map(s => s.entryDate));
         const moved = await tx.movement.groupBy({ by: ["shipmentId"], where: { shipmentId: { in: ids } }, _sum: { kg: true, qty: true } });
         const balance = new Map(moved.map(m => [m.shipmentId, { kg: m._sum.kg?.toNumber() ?? 0, qty: byId.get(m.shipmentId)?.countActual == null ? null : m._sum.qty ?? 0 }]));
+        // Surplus ("Tepricë"): when a line was confirmed with a reason, what the sale needs beyond the load's balance
+        // (kg and, for counted loads, units) is taken as surplus found on the load, so its balance ends at zero.
+        const surpluses: { shipmentId: string; kg: number; qty: number | null; reason: string }[] = [];
+        for (const [shipmentId, need] of required) {
+          const reason = lines.find(l => l.shipmentId === shipmentId && l.surplusReason)?.surplusReason;
+          const bal = balance.get(shipmentId) ?? { kg: 0, qty: byId.get(shipmentId)?.countActual == null ? null : 0 };
+          if (!reason) continue;
+          const kg = Math.max(0, Math.round((need.kg - bal.kg) * 1000) / 1000);
+          const qty = bal.qty == null || need.qty == null ? null : Math.max(0, need.qty - bal.qty);
+          if (kg <= 0 && !qty) continue;
+          surpluses.push({ shipmentId, kg, qty: bal.qty == null ? null : qty, reason });
+          balance.set(shipmentId, { kg: bal.kg + kg, qty: bal.qty == null ? null : bal.qty + (qty ?? 0) });
+        }
         assertAvailable(required, balance);
         // Order sheet numbers run 1, 2, 3… with no gaps: the next number is taken under a transaction-wide lock,
         // after every check has passed, so a rejected sale never uses one up.
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(7340001)`;
         const [{ next }] = await tx.$queryRaw<{ next: number }[]>`SELECT (COALESCE(MAX(receipt_nr), 0) + 1)::int AS next FROM sales`;
         const created = await tx.sale.create({ data: { clientId, date: saleDate, receiptNr: Number(next) } });
+        for (const s of surpluses) {
+          await tx.stockSurplus.create({ data: { shipmentId: s.shipmentId, saleId: created.id, userId, kg: s.kg, qty: s.qty, reason: s.reason, date: saleDate } });
+          await tx.movement.create({ data: { shipmentId: s.shipmentId, userId, type: "SURPLUS", kg: s.kg, qty: s.qty } });
+        }
         for (const l of lines) {
           await tx.saleLine.create({ data: { saleId: created.id, shipmentId: l.shipmentId, method: l.method, qty: l.qty, kg: l.kg, pricePerKg: l.pricePerKg, weights: l.weights ?? Prisma.JsonNull, fixedKg: l.fixedKg } });
           await tx.movement.create({ data: { shipmentId: l.shipmentId, saleId: created.id, userId, type: "OUT", kg: -l.kg, qty: l.qty == null ? null : -l.qty } });

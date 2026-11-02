@@ -1,4 +1,4 @@
-import type { Client, Product, Sale, SaleLine, Shipment, StockAdjustment, Supplier, Thresholds } from "./types";
+import type { Client, Product, Sale, SaleLine, Shipment, StockAdjustment, StockSurplus, Supplier, Thresholds } from "./types";
 import { remainingKg } from "./stock";
 import { daysUntil, todayInTirane } from "./utils";
 import { inventoryCosts, sumCosts } from "./costs";
@@ -55,13 +55,20 @@ export function lossesIn(adjustments: StockAdjustment[], shipments: Shipment[], 
   return { kg: rows.reduce((n, r) => n + r.kg, 0), value: missingCostKg > 0 ? null : knownValue, knownValue, missingCostKg, count: rows.length };
 }
 
-export interface Headline extends Econ { losses: Losses; returnsKg: number; returnsValue: number; purchaseSpend: number | null; inventoryValue: number | null; knownInventoryValue: number; missingInventoryCostKg: number; orders: number; }
-export function headline(sales: Sale[], shipments: Shipment[], from: string, to: string, adjustments: StockAdjustment[] = []): Headline {
+/** Surplus ("Tepricë") in the period: kg sold beyond the recorded stock, valued at the load's cost. They were never
+ *  paid for, so this value is added back as profit (sales already charged these kg at the load's cost). */
+export function surplusIn(surpluses: StockSurplus[], shipments: Shipment[], from: string, to: string): Losses {
+  return lossesIn(surpluses.map(s => ({ id: s.id, shipmentId: s.shipmentId, kg: s.kg, qty: s.qty, reason: "OTHER" as const, date: s.date })), shipments, from, to);
+}
+
+export interface Headline extends Econ { losses: Losses; surplus: Losses; returnsKg: number; returnsValue: number; purchaseSpend: number | null; inventoryValue: number | null; knownInventoryValue: number; missingInventoryCostKg: number; orders: number; }
+export function headline(sales: Sale[], shipments: Shipment[], from: string, to: string, adjustments: StockAdjustment[] = [], surpluses: StockSurplus[] = []): Headline {
   const e = econOf(linesIn(sales, from, to), shipments);
   const credits = sales.filter(s => s.isReturn && inRange(s.date, from, to));
   return {
     ...e,
     losses: lossesIn(adjustments, shipments, from, to),
+    surplus: surplusIn(surpluses, shipments, from, to),
     returnsKg: -credits.reduce((n, s) => n + s.totalKg, 0), returnsValue: -credits.reduce((n, s) => n + s.totalValue, 0),
     // Client returns come back as loads but were not bought, so they are not purchases.
     purchaseSpend: sumCosts(shipments.filter(s => !s.returnOf && inRange(s.entryDate, from, to)).map(s => s.totalCost)),

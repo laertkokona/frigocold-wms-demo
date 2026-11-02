@@ -208,6 +208,35 @@ async function main() {
     assert.deepEqual(numbers, numbers.map((_, i) => i + 1));
     assert.ok((await db.sale.findUniqueOrThrow({ where: { id: wrongSale } })).receiptNr! > 0);
     assert.equal((await getState()).sales.find(x => x.id === twoLines)?.receiptNr, (await db.sale.findUniqueOrThrow({ where: { id: twoLines } })).receiptNr);
+    // Surplus ("Tepricë"): a sale may take more than the load has only when confirmed with a reason; the extra kg (and
+    // units) become surplus at no cost, the load ends at zero, and cancelling the sale reverses it.
+    const sur = String((await receive({ productId: product.id, supplierId: supplier.id, orderNr: "SUR", countDoc: 4, countActual: 4, netKgActual: 40, costPerKg: 2, expFrom: "2027-01-01", entryDate: today })).id);
+    const overSale = (extra: object) => executeCommand(commandSchema.parse({ type: "finalizeSale", data: { clientId: client.id, date: today, lines: [{ productId: product.id, shipmentId: sur, method: "TOTAL", qty: 5, kg: 45, pricePerKg: 6, ...extra }] } }), user.id, randomUUID());
+    await assert.rejects(overSale({}), /Insufficient stock/);
+    const surSale = String((await overSale({ surplusReason: "Peshë më shumë se në sistem" })).id);
+    let surLoad = (await getState()).shipments.find(x => x.id === sur)!;
+    assert.equal(surLoad.surplusKg, 5);
+    assert.equal(surLoad.surplusCount, 1);
+    assert.equal(surLoad.netKgActual - surLoad.soldKg - (surLoad.adjustedKg ?? 0) + (surLoad.surplusKg ?? 0), 0);
+    const st2 = await getState();
+    assert.deepEqual(st2.surpluses.filter(x => x.shipmentId === sur).map(x => [x.kg, x.qty, x.saleId, x.clientId]), [[5, 1, surSale, client.id]]);
+    const tep = await browse({ ...params, kind: "movements", filter: "TEP" });
+    assert.equal(tep.total, 1);
+    assert.equal(tep.items[0].kg, 5);
+    assert.equal((await getAccountingReport("all", product.id, 1)).cur.surplus.value, 10);
+    // Only the units go over: the surplus is units with no extra kilograms.
+    const unitsOnly = String((await receive({ productId: product.id, supplierId: supplier.id, orderNr: "SUR2", countDoc: 4, countActual: 4, netKgActual: 40, costPerKg: 2, expFrom: "2027-01-01", entryDate: today })).id);
+    await executeCommand(commandSchema.parse({ type: "finalizeSale", data: { clientId: client.id, date: today, lines: [{ productId: product.id, shipmentId: unitsOnly, method: "TOTAL", qty: 5, kg: 30, pricePerKg: 6, surplusReason: "Një karton më shumë" }] } }), user.id, randomUUID());
+    const uo = (await getState()).shipments.find(x => x.id === unitsOnly)!;
+    assert.equal(uo.surplusKg, 0);
+    assert.equal(uo.surplusCount, 1);
+    // Cancelling the sale takes the surplus back off the load.
+    await executeCommand(commandSchema.parse({ type: "cancelSale", id: surSale, data: { reason: "Test" } }), user.id);
+    surLoad = (await getState()).shipments.find(x => x.id === sur)!;
+    assert.equal(surLoad.surplusKg, 0);
+    assert.equal(surLoad.soldKg, 0);
+    assert.equal((await browse({ ...params, kind: "movements", filter: "TEP" })).total, 1);
+    assert.ok(!(await getState()).surpluses.some(x => x.saleId === surSale));
     console.log("Integration passed: migration preservation, incomplete receiving, kg-only sales, unit/kg overdraw protection, idempotency, browsing, missing-cost reporting, enrichment, immutable ledger, concurrent sales, cancelled sales and kg corrections.");
   } finally {
     shared.frigocoldDb = previous;
