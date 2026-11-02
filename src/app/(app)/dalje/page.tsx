@@ -81,11 +81,11 @@ export default function DaljePage() {
       const s = await store.finalizeSale({ clientId, lines, totalKg: +totalKg.toFixed(2), totalValue: totalVal, requestId: requestId.current, date: saleDate });
       requestId.current = null;
       setDoneSale(s); setStep("done"); toast.success("Porosia u finalizua");
-      if (print && !showReceipt(win, receiptFor(s, store))) toast("Shfletuesi bllokoi dritaren e printimit. Shtyp «Printo faturën» më poshtë.");
+      if (print && !(await showReceipt(win, receiptFor(s, store)))) toast.error("Fatura nuk u krijua. Shtyp «Printo faturën» më poshtë për ta provuar sërish.");
     } catch (e) { win?.close(); toast.error(e instanceof Error ? e.message : "Porosia nuk u finalizua"); }
     finally { setSaving(false); }
   };
-  const reprint = (copies?: ReceiptCopy[]) => { if (doneSale && !printSale(doneSale, store, copies)) toast.error("Shfletuesi bllokoi dritaren e printimit. Lejo dritaret pop-up për këtë faqe."); };
+  const reprint = async (copies?: ReceiptCopy[]) => { if (doneSale && !(await printSale(doneSale, store, copies))) toast.error("Fatura nuk u krijua. Provo sërish."); };
   const reset = () => { requestId.current = null; setLines([]); setProduct(null); setShip(null); setWeights([]); setBuf(""); setClientId(""); setSaleDate(todayInTirane()); setDoneSale(null); setStep("order"); };
   const printWeights = () => {
     const w = method === "PALLET" ? pallets.map(Number).filter(n => n > 0) : weights; const win = window.open("", "_blank"); if (!win) return;
@@ -283,7 +283,7 @@ export default function DaljePage() {
               <Button variant="outline" size="lg" disabled={!clientId || !!dateErr || saving} onClick={() => finalize(true)}><Printer /> Printo faturën</Button>
               <Button variant="exit" size="lg" disabled={!clientId || !!dateErr || saving} onClick={() => finalize()}><Check /> {saving ? "Po ruhet…" : "Finalizo porosinë"}</Button>
             </div>
-            <p className="mt-1.5 text-xs text-muted-foreground">«Printo faturën» e ruan porosinë dhe hap fletën e porosisë me numrin e saj në dy kopje (kontabiliteti me ngarkesat, klienti vetëm me produktet) për t’i printuar ose ruajtur si PDF.</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">«Printo faturën» e ruan porosinë dhe hap fletën e porosisë si PDF me numrin e saj, në dy kopje (kontabiliteti me ngarkesat, klienti vetëm me produktet), gati për t’u printuar.</p>
           </div>
         </motion.div>
       )}

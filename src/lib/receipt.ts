@@ -1,10 +1,10 @@
 import { fmtDate, fmtNum } from "./utils";
+import type { jsPDF } from "jspdf";
 
 /** One printed line of a "Fletë porosi": cartons (if known), product, kg, price per kg and value. */
 export interface ReceiptLine { cartons: number | null; product: string; /** the load it came from: supplier · specs · lot */ detail?: string; kg: number; pricePerKg: number; value: number }
 export interface ReceiptData { number?: number | null; date: string; client: { name: string; city?: string; phone?: string }; lines: ReceiptLine[] }
 
-const esc = (value: string) => value.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const ROWS = 12;
 
 /** The fixed terms printed at the bottom of every order sheet, as on the paper form. */
@@ -21,62 +21,84 @@ export const RECEIPT_TERMS = [
  *  in the top-left box; the client's shows only the product name, so the client never sees the supplier. */
 export type ReceiptCopy = "accounting" | "client";
 
-function sheetHtml(r: ReceiptData | null, copy: ReceiptCopy) {
-  const lines = r?.lines ?? [];
-  const rows = Math.max(ROWS, lines.length);
-  const rowMm = Math.min(8.5, (ROWS * 8.5) / rows);
-  const totalKg = lines.reduce((a, l) => a + l.kg, 0), totalValue = lines.reduce((a, l) => a + l.value, 0);
-  const body = Array.from({ length: rows }, (_, i) => {
-    const l = lines[i];
-    const detail = copy === "accounting" && l?.detail ? `<div class="sub">${esc(l.detail)}</div>` : "";
-    return `<tr style="height:${rowMm}mm"><td class="c">${l && l.cartons != null ? fmtNum(l.cartons) : ""}</td><td class="p">${l ? esc(l.product) + detail : ""}</td><td class="n">${l ? fmtNum(l.kg, 3) : ""}</td><td class="n">${l ? fmtNum(l.pricePerKg, 2) : ""}</td><td class="n">${l ? fmtNum(l.value, 2) : ""}</td></tr>`;
-  }).join("");
-  return `<div class="sheet">
-<table class="head"><tr><td class="corner">${copy === "accounting" ? "KONTABILITETI" : ""}</td><td class="t">FLETË POROSI</td><td class="d">Nr. <span>${r?.number != null ? r.number : "&nbsp;"}</span><br>Datë: <span>${r ? fmtDate(r.date) : "&nbsp;"}</span></td></tr></table>
-<table class="buyer"><tr><td class="k">BLERËSI</td><td>${r ? esc(r.client.name) + (r.client.city ? ` <span style="color:#555">· ${esc(r.client.city)}</span>` : "") : ""}</td></tr><tr><td class="k">Nr. Telefoni / NIPT</td><td>${r?.client.phone ? esc(r.client.phone) : ""}</td></tr></table>
-<table class="items"><colgroup><col style="width:24mm"><col><col style="width:30mm"><col style="width:28mm"><col style="width:36mm"></colgroup>
-<thead><tr><th>Nr. i arkave</th><th>Emërtimi i mallit</th><th>Sasia (kg)</th><th>Çmimi (Lek/kg)</th><th>Vlefta (Lek)</th></tr></thead>
-<tbody>${body}</tbody>
-<tfoot><tr><td></td><td>TOTALI</td><td class="n">${r ? fmtNum(totalKg, 3) : ""}</td><td></td><td class="n">${r ? fmtNum(totalValue, 2) : ""}</td></tr></tfoot></table>
-<div class="terms"><ul>${RECEIPT_TERMS.map(t => `<li>${esc(t)}</li>`).join("")}</ul></div>
-</div>`;
-}
+/** Text for the PDF's built-in fonts (Latin-1): the locale's thin spaces become plain spaces and typographic
+ *  quotes and dashes their plain forms, so every character prints (ë, ç and · are already Latin-1). */
+const pdfText = (s: string) => s.replace(/[\u00a0\u202f\u2009]/g, " ").replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/[\u2013\u2014]/g, "-").replace(/[^\x00-\xff]/g, "?");
+const num = (n: number, d: number) => pdfText(fmtNum(n, d));
 
-/** "Fletë porosi" (warehouse order sheet), filled from a sale: one A4 page per copy, by default the accountant's
- *  copy first and the client's second. Always 12 product rows like the paper form; more lines than that shrink the
- *  rows so each copy stays on one page. `autoPrint` opens the print dialog (print or save as PDF) on load. */
-export function receiptHtml(r: ReceiptData | null, autoPrint = false, copies: ReceiptCopy[] = ["accounting", "client"]) {
-  const title = r ? `Fletë porosi${r.number != null ? ` nr. ${r.number}` : ""} — ${r.client.name} — ${fmtDate(r.date)}` : "Fletë porosi";
-  return `<!doctype html><html lang="sq"><head><meta charset="utf-8"><title>${esc(title)}</title><style>
-/* Zero page margin leaves the browser no room for its own header and footer (date, page title, the page's link,
-   page numbers), so they are not printed; each copy carries its own 12 mm margin instead. */
-@page{size:A4 portrait;margin:0}
-*{box-sizing:border-box}
-html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}
-/* No fixed height: phones (iPhone/Safari) print with their own margins and a smaller printable area, and a sheet
-   taller than that spilled onto an extra empty page. Each copy is kept well under the smallest common page area
-   (US Letter with wide margins), and the next copy starts on a new page. */
-.sheet{width:100%;max-width:210mm;margin:0 auto;padding:12mm}
-.sheet>*+*{margin-top:4mm}
-.sheet+.sheet{break-before:page;page-break-before:always}
-.sheet table,.sheet .terms{break-inside:avoid;page-break-inside:avoid}
-table{border-collapse:collapse;width:100%}
-td,th{border:1.2px solid #111;padding:0 2.5mm;font-size:11pt}
-.head td{height:17mm}
-.head .corner{width:52mm;text-align:center;font-weight:700;font-size:12pt;letter-spacing:.5px}
-.head .t{text-align:center;font-weight:700;font-size:17pt;letter-spacing:.5px}
-.head .d{width:52mm;font-weight:700;font-size:12pt;white-space:nowrap;line-height:2}
-.head .d span{font-weight:400;border-bottom:1px solid #111;display:inline-block;min-width:30mm;padding:0 1mm}
-.buyer td{height:9mm;font-size:11pt}
-.buyer .k{width:52mm;font-weight:700}
-.items th{height:10mm;font-size:10.5pt;background:#f2f2f2;line-height:1.15}
-.items td.c{text-align:center}
-.items td.p{line-height:1.15}
-.items .sub{font-size:8.5pt;color:#333;max-height:2.3em;overflow:hidden}
-.items td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.items tfoot td{height:10mm;font-weight:700;background:#f2f2f2}
-.terms{border:1.2px solid #111;padding:2.5mm 4mm;font-size:9pt;line-height:1.3}
-.terms ul{margin:0;padding-left:4mm}
-.terms li{margin:0 0 1mm}
-</style></head><body>${copies.map(c => sheetHtml(r, c)).join("\n")}${autoPrint ? "<script>window.onload=()=>window.print()</script>" : ""}</body></html>`;
+/** "Fletë porosi" (warehouse order sheet) as a real A4 PDF, one page per copy — by default the accountant's copy
+ *  first and the client's second. A PDF prints exactly as drawn: phones and browsers add no link, date or page
+ *  numbers and no extra blank pages, which they do when printing a web page. Always 12 product rows like the paper
+ *  form; more lines shrink the rows so each copy stays on one page. */
+export async function receiptPdf(r: ReceiptData, copies: ReceiptCopy[] = ["accounting", "client"]): Promise<jsPDF> {
+  const [{ jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  const title = `Fletë porosi${r.number != null ? ` nr. ${r.number}` : ""} - ${r.client.name} - ${fmtDate(r.date)}`;
+  doc.setProperties({ title: pdfText(title) });
+  const L = 12, W = 186, LW = 0.3;
+  const rows = Math.max(ROWS, r.lines.length), rowH = Math.min(8.5, (ROWS * 8.5) / rows);
+  const totalKg = r.lines.reduce((a, l) => a + l.kg, 0), totalValue = r.lines.reduce((a, l) => a + l.value, 0);
+  copies.forEach((copy, page) => {
+    if (page > 0) doc.addPage();
+    doc.setDrawColor(17); doc.setLineWidth(LW); doc.setTextColor(17);
+    // Header: [KONTABILITETI | FLETË POROSI | Nr. / Datë]
+    let y = 12;
+    const h = 17;
+    doc.rect(L, y, 52, h); doc.rect(L + 52, y, W - 104, h); doc.rect(L + W - 52, y, 52, h);
+    doc.setFont("helvetica", "bold");
+    if (copy === "accounting") { doc.setFontSize(11); doc.text("KONTABILITETI", L + 26, y + h / 2 + 1.5, { align: "center" }); }
+    doc.setFontSize(16); doc.text(pdfText("FLETË POROSI"), L + W / 2, y + h / 2 + 2, { align: "center" });
+    doc.setFontSize(10.5);
+    doc.text("Nr.", L + W - 49, y + 6.5); doc.text(pdfText("Datë:"), L + W - 49, y + 13);
+    doc.setFont("helvetica", "normal");
+    doc.text(r.number != null ? String(r.number) : "", L + W - 36, y + 6.5); doc.text(fmtDate(r.date), L + W - 36, y + 13);
+    doc.setLineWidth(0.2); doc.line(L + W - 37, y + 7.5, L + W - 4, y + 7.5); doc.line(L + W - 37, y + 14, L + W - 4, y + 14); doc.setLineWidth(LW);
+    // Buyer
+    y += h + 4;
+    const buyer: [string, string][] = [[pdfText("BLERËSI"), pdfText(r.client.name + (r.client.city ? ` · ${r.client.city}` : ""))], ["Nr. Telefoni / NIPT", pdfText(r.client.phone ?? "")]];
+    buyer.forEach(([k, v], i) => {
+      const yy = y + i * 9;
+      doc.rect(L, yy, 52, 9); doc.rect(L + 52, yy, W - 52, 9);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text(k, L + 2.5, yy + 5.8);
+      doc.setFont("helvetica", "normal"); doc.text(v, L + 54.5, yy + 5.8, { maxWidth: W - 57 });
+    });
+    y += 18 + 4;
+    // Items
+    const body = Array.from({ length: rows }, (_, i) => {
+      const l = r.lines[i];
+      return l ? [l.cartons != null ? num(l.cartons, 0) : "", pdfText(l.product), num(l.kg, 3), num(l.pricePerKg, 2), num(l.value, 2)] : ["", "", "", "", ""];
+    });
+    autoTable(doc, {
+      startY: y, margin: { left: L, right: L }, theme: "grid", tableWidth: W,
+      head: [["Nr. i arkave", pdfText("Emërtimi i mallit"), "Sasia (kg)", pdfText("Çmimi (Lek/kg)"), "Vlefta (Lek)"]],
+      body,
+      foot: [["", "TOTALI", num(totalKg, 3), "", num(totalValue, 2)]],
+      showHead: "firstPage", showFoot: "lastPage",
+      styles: { font: "helvetica", fontSize: 10, textColor: 17, lineColor: 17, lineWidth: LW, cellPadding: { top: 1, bottom: 1, left: 2, right: 2 }, minCellHeight: rowH, valign: "middle", overflow: "ellipsize" },
+      headStyles: { fillColor: 242, textColor: 17, fontStyle: "bold", halign: "center", fontSize: 9.5, minCellHeight: 10 },
+      footStyles: { fillColor: 242, textColor: 17, fontStyle: "bold", minCellHeight: 9 },
+      columnStyles: { 0: { cellWidth: 24, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 30, halign: "right" }, 3: { cellWidth: 28, halign: "right" }, 4: { cellWidth: 36, halign: "right" } },
+      didParseCell: c => {
+        if (c.section === "foot" && c.column.index >= 2) c.cell.styles.halign = "right";
+        // A line with its load underneath needs room for both, even when many lines make the rows smaller.
+        if (copy === "accounting" && c.section === "body" && r.lines[c.row.index]?.detail) { c.cell.styles.minCellHeight = Math.max(rowH, 8.5); if (c.column.index === 1) c.cell.styles.valign = "top"; }
+      },
+      didDrawCell: c => {
+        const detail = r.lines[c.row.index]?.detail;
+        if (copy !== "accounting" || c.section !== "body" || c.column.index !== 1 || !detail) return;
+        doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(70);
+        doc.text(doc.splitTextToSize(pdfText(detail), c.cell.width - 4)[0] ?? "", c.cell.x + 2, c.cell.y + c.cell.height - 1.6);
+        doc.setFontSize(10); doc.setTextColor(17);
+      },
+    });
+    // Terms
+    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
+    const lines = RECEIPT_TERMS.map(t => doc.splitTextToSize(pdfText(t), W - 12) as string[]);
+    const lh = 3.6, boxH = 5 + lines.reduce((a, ls) => a + ls.length * lh + 0.8, 0);
+    doc.rect(L, y, W, boxH);
+    let ty = y + 5;
+    for (const ls of lines) { doc.circle(L + 3.2, ty - 1, 0.45, "F"); doc.text(ls, L + 6, ty); ty += ls.length * lh + 0.8; }
+  });
+  return doc;
 }

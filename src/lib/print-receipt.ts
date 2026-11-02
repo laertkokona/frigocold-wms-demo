@@ -1,5 +1,6 @@
 "use client";
-import { receiptHtml, type ReceiptCopy, type ReceiptData } from "./receipt";
+import { receiptPdf, type ReceiptCopy, type ReceiptData } from "./receipt";
+import { fmtDate } from "./utils";
 import type { Client, Product, Sale, SaleLine, Shipment, Supplier } from "./types";
 
 export type ReceiptContext = { clients: Client[]; products: Product[]; shipments: Shipment[]; suppliers: Supplier[] };
@@ -29,12 +30,23 @@ export function openReceiptWindow() {
   return win;
 }
 
-/** Writes the order sheet into the window and opens the print dialog (print it or save it as PDF).
- *  By default both copies: the accountant's (with the loads) and the client's (product names only). */
-export function showReceipt(win: Window | null, data: ReceiptData, copies?: ReceiptCopy[]) {
-  if (!win) return false;
-  win.document.open(); win.document.write(receiptHtml(data, true, copies)); win.document.close();
-  return true;
+/** Shows the order sheet as a PDF in the window opened for it, ready to print or save (the computer's PDF viewer
+ *  opens the print dialog by itself). By default both copies: the accountant's (with the loads) and the client's
+ *  (product names only). If the window was blocked, the PDF is downloaded instead. */
+export async function showReceipt(win: Window | null, data: ReceiptData, copies?: ReceiptCopy[]) {
+  try {
+    const doc = await receiptPdf(data, copies);
+    doc.autoPrint();
+    const url = URL.createObjectURL(doc.output("blob"));
+    window.setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
+    if (win && !win.closed) { win.location.href = url; return true; }
+    const a = document.createElement("a");
+    a.href = url; a.download = `Flete-porosi${data.number != null ? `-${data.number}` : ""}-${fmtDate(data.date).replaceAll("/", "-")}.pdf`; a.click();
+    return true;
+  } catch {
+    win?.close();
+    return false;
+  }
 }
 
 export const printSale = (sale: Sale, ctx: ReceiptContext, copies?: ReceiptCopy[]) => showReceipt(openReceiptWindow(), receiptFor(sale, ctx), copies);
