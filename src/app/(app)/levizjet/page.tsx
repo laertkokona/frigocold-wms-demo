@@ -11,12 +11,12 @@ import { BrowseControls } from "@/components/browse-controls";
 import { useBrowse } from "@/lib/use-browse";
 import { cn, fmtDate, fmtLek, fmtNum } from "@/lib/utils";
 
-type Type = "IN" | "OUT" | "RET" | "ADJ" | "ANUL" | "KOR";
+type Type = "IN" | "OUT" | "RET" | "ADJ" | "ANUL" | "KOR" | "TEP";
 type Line = { id: string; sid: string; product: string; lot: string; qty: number | null; kg: number; price: number | null; value: number | null; method: string };
 /** One row per order: a sale with all its lines, a truck from a supplier with all its loads, a return, a shortage or a correction. */
 type Row = { id: string; date: string; type: Type; party: string | null; items: number; qty: number | null; kg: number; value: number | null; products: string; ref: string | null; method: string; lines: Line[] };
-const TYPE_LABEL = { IN: "HYRJE", OUT: "DALJE", RET: "KTHIM", ADJ: "MUNGESË", ANUL: "SHITJE E ANULUAR", KOR: "KORRIGJIM KG" } as const;
-const TYPE_BADGE = { IN: "entry", OUT: "exit", RET: "entry", ADJ: "warn", ANUL: "outline", KOR: "default" } as const;
+const TYPE_LABEL = { IN: "HYRJE", OUT: "DALJE", RET: "KTHIM", ADJ: "MUNGESË", ANUL: "SHITJE E ANULUAR", KOR: "KORRIGJIM KG", TEP: "TEPRICË" } as const;
+const TYPE_BADGE = { IN: "entry", OUT: "exit", RET: "entry", ADJ: "warn", ANUL: "outline", KOR: "default", TEP: "entry" } as const;
 const csvCell = (value: string | number) => `"${String(value).replaceAll('"', '""').replace(/^[=+@-]/, "'$&")}"`;
 
 /** What the row is, in one line: who it was with and what it contained. */
@@ -25,6 +25,7 @@ function summary(r: Row) {
   if (r.type === "OUT" || r.type === "ANUL") return { title: r.party ?? "—", sub: `${r.ref ? `Fletë porosi nr. ${r.ref} · ` : ""}${many ? `${r.items} artikuj: ` : ""}${r.products}${r.type === "ANUL" ? ` · ${r.method}` : ""}` };
   if (r.type === "IN") return { title: r.party ?? "Pa furnizues", sub: `${r.ref ? `Porosia ${r.ref} · ` : ""}${many ? `${r.items} ngarkesa: ` : ""}${r.products}` };
   if (r.type === "RET") return { title: r.party ?? "—", sub: `${r.products} · ${r.method}` };
+  if (r.type === "TEP") return { title: r.products, sub: `${r.party ?? "—"}${r.ref ? ` · Fletë porosi nr. ${r.ref}` : ""} · ${r.method}` };
   return { title: r.products, sub: r.method };
 }
 
@@ -38,8 +39,8 @@ export default function Levizjet() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   return <>
-    <PageHeader title="Lëvizjet" sub="Çdo porosi, hyrje, kthim, mungesë dhe korrigjim — kliko një rresht për detajet" right={<Button variant="outline" disabled={!list.items.length} onClick={exportPage}><Download /> Eksporto faqen CSV</Button>} />
-    <div className="mb-4 flex flex-wrap gap-3"><div className="max-w-full overflow-x-auto"><Segmented value={list.filter || "ALL"} onChange={list.setFilter} options={[{ value: "ALL", label: "Të gjitha" }, { value: "IN", label: "Hyrje" }, { value: "OUT", label: "Dalje" }, { value: "RET", label: "Kthime" }, { value: "ADJ", label: "Mungesa" }, { value: "ANUL", label: "Anuluar" }, { value: "KOR", label: "Korrigjime" }]} className="w-max min-w-full [&_button]:whitespace-nowrap" /></div><div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Kërko klient, produkt, lot, porosi…" value={list.q} onChange={e => list.setQ(e.target.value)} className="max-w-xs pl-9" /></div></div>
+    <PageHeader title="Lëvizjet" sub="Çdo porosi, hyrje, kthim, mungesë, tepricë dhe korrigjim — kliko një rresht për detajet" right={<Button variant="outline" disabled={!list.items.length} onClick={exportPage}><Download /> Eksporto faqen CSV</Button>} />
+    <div className="mb-4 flex flex-wrap gap-3"><div className="max-w-full overflow-x-auto"><Segmented value={list.filter || "ALL"} onChange={list.setFilter} options={[{ value: "ALL", label: "Të gjitha" }, { value: "IN", label: "Hyrje" }, { value: "OUT", label: "Dalje" }, { value: "RET", label: "Kthime" }, { value: "ADJ", label: "Mungesa" }, { value: "ANUL", label: "Anuluar" }, { value: "KOR", label: "Korrigjime" }, { value: "TEP", label: "Tepricë" }]} className="w-max min-w-full [&_button]:whitespace-nowrap" /></div><div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Kërko klient, produkt, lot, porosi…" value={list.q} onChange={e => list.setQ(e.target.value)} className="max-w-xs pl-9" /></div></div>
     {list.error && <p role="alert" className="mb-3 text-sm text-danger">{list.error} <button className="underline" onClick={list.refresh}>Provo sërish</button></p>}
     <div className="overflow-x-auto rounded-lg border"><table className="w-full text-sm"><thead><tr className="border-b bg-card text-left text-[11px] text-muted-foreground"><th className="px-3 py-2 font-medium">Data</th><th className="px-3 py-2 font-medium">Lloji</th><th className="px-3 py-2 font-medium">Klienti / furnizuesi · përmbajtja</th><th className="px-3 py-2 text-right font-medium">Sasia</th><th className="px-3 py-2 text-right font-medium">Kg</th><th className="px-3 py-2 text-right font-medium">Vlera</th></tr></thead>
       <tbody>{list.items.map(r => { const isOpen = open === r.id, s = summary(r), struck = r.type === "ANUL"; return <Fragment key={r.id}>

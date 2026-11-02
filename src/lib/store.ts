@@ -1,8 +1,8 @@
 "use client";
 import { create } from "zustand";
-import type { Client, Draft, Product, Sale, Shipment, Supplier, Thresholds, ShortageReason, StockAdjustment } from "./types";
+import type { Client, Draft, Product, Sale, Shipment, Supplier, Thresholds, ShortageReason, StockAdjustment, StockSurplus } from "./types";
 
-type Data = { products: Product[]; suppliers: Supplier[]; clients: Client[]; shipments: Shipment[]; drafts: Draft[]; sales: Sale[]; adjustments: StockAdjustment[]; thresholds: Thresholds };
+type Data = { products: Product[]; suppliers: Supplier[]; clients: Client[]; shipments: Shipment[]; drafts: Draft[]; sales: Sale[]; adjustments: StockAdjustment[]; surpluses: StockSurplus[]; thresholds: Thresholds };
 interface State extends Data {
   hydrated: boolean;
   error: string | null;
@@ -26,7 +26,7 @@ interface State extends Data {
   setThresholds: (t: Thresholds) => Promise<void>;
 }
 
-const empty: Data = { products: [], suppliers: [], clients: [], shipments: [], drafts: [], sales: [], adjustments: [], thresholds: { expiryDays: 60, lowShipmentCount: 5, lowProductKg: {} } };
+const empty: Data = { products: [], suppliers: [], clients: [], shipments: [], drafts: [], sales: [], adjustments: [], surpluses: [], thresholds: { expiryDays: 60, lowShipmentCount: 5, lowProductKg: {} } };
 
 async function request(path: string, body?: unknown) {
   const response = await fetch(path, { method: body ? "POST" : "GET", headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined, cache: "no-store" });
