@@ -23,7 +23,7 @@ export type ReceiptCopy = "accounting" | "client";
 
 /** Text for the PDF's built-in fonts (Latin-1): the locale's thin spaces become plain spaces and typographic
  *  quotes and dashes their plain forms, so every character prints (ë, ç and · are already Latin-1). */
-const pdfText = (s: string) => s.replace(/[\u00a0\u202f\u2009]/g, " ").replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/[\u2013\u2014]/g, "-").replace(/[^\x00-\xff]/g, "?");
+export const pdfText = (s: string) => s.replace(/[\u00a0\u202f\u2009]/g, " ").replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/[\u2013\u2014]/g, "-").replace(/[^\x00-\xff]/g, "?");
 const num = (n: number, d: number) => pdfText(fmtNum(n, d));
 
 /** "Fletë porosi" (warehouse order sheet) as a real A4 PDF, one page per copy — by default the accountant's copy

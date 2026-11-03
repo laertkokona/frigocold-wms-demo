@@ -1,6 +1,7 @@
 "use client";
 import { receiptPdf, type ReceiptCopy, type ReceiptData } from "./receipt";
 import { fmtDate } from "./utils";
+import type { jsPDF } from "jspdf";
 import type { Client, Product, Sale, SaleLine, Shipment, Supplier } from "./types";
 
 export type ReceiptContext = { clients: Client[]; products: Product[]; shipments: Shipment[]; suppliers: Supplier[] };
@@ -24,29 +25,32 @@ export function receiptFor(sale: { date: string; clientId: string; lines: SaleLi
 }
 
 /** Opens the print window right away (browsers only allow it during the click), so it can be filled once the sale is saved. */
-export function openReceiptWindow() {
+export function openReceiptWindow(message = "Po përgatitet fleta e porosisë…") {
   const win = window.open("", "_blank");
-  win?.document.write("<p style=\"font-family:system-ui;padding:24px\">Po përgatitet fleta e porosisë…</p>");
+  win?.document.write(`<p style="font-family:system-ui;padding:24px">${message}</p>`);
   return win;
 }
 
-/** Shows the order sheet as a PDF in the window opened for it, ready to print or save (the computer's PDF viewer
- *  opens the print dialog by itself). By default both copies: the accountant's (with the loads) and the client's
- *  (product names only). If the window was blocked, the PDF is downloaded instead. */
-export async function showReceipt(win: Window | null, data: ReceiptData, copies?: ReceiptCopy[]) {
+/** Shows a PDF in the window opened for it, ready to print or save (the computer's PDF viewer opens the print
+ *  dialog by itself). If the window was blocked, the PDF is downloaded instead. */
+export async function showPdf(win: Window | null, make: () => Promise<jsPDF>, filename: string) {
   try {
-    const doc = await receiptPdf(data, copies);
+    const doc = await make();
     doc.autoPrint();
     const url = URL.createObjectURL(doc.output("blob"));
     window.setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
     if (win && !win.closed) { win.location.href = url; return true; }
     const a = document.createElement("a");
-    a.href = url; a.download = `Flete-porosi${data.number != null ? `-${data.number}` : ""}-${fmtDate(data.date).replaceAll("/", "-")}.pdf`; a.click();
+    a.href = url; a.download = filename; a.click();
     return true;
   } catch {
     win?.close();
     return false;
   }
 }
+
+/** The order sheet as a PDF: by default both copies, the accountant's (with the loads) and the client's (product names only). */
+export const showReceipt = (win: Window | null, data: ReceiptData, copies?: ReceiptCopy[]) =>
+  showPdf(win, () => receiptPdf(data, copies), `Flete-porosi${data.number != null ? `-${data.number}` : ""}-${fmtDate(data.date).replaceAll("/", "-")}.pdf`);
 
 export const printSale = (sale: Sale, ctx: ReceiptContext, copies?: ReceiptCopy[]) => showReceipt(openReceiptWindow(), receiptFor(sale, ctx), copies);
