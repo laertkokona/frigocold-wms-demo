@@ -72,7 +72,7 @@ export async function stockReportPdf(ctx: StockReportContext): Promise<jsPDF> {
     head: [["Ngarkesa", "Kartona", "Kg", "Kosto Lek/kg", "Vlera Lek"]],
     body,
     foot: [["TOTALI", "", num(totalKg, 2), costedKg ? num(totalValue / costedKg, 2) : "-", num(totalValue, 0)]],
-    showHead: "everyPage", showFoot: "lastPage",
+    showHead: "everyPage", showFoot: "lastPage", rowPageBreak: "avoid",
     styles: { font: "helvetica", fontSize: 13, textColor: 17, cellPadding: { top: 1.8, bottom: 1.8, left: 2, right: 2 }, valign: "top", lineColor: 170, lineWidth: { bottom: 0.2 } },
     headStyles: { fillColor: 233, fontStyle: "bold", fontSize: 11.5, halign: "right", valign: "middle", lineColor: 17, lineWidth: { bottom: 0.6 } },
     footStyles: { fontStyle: "bold", fontSize: 14, halign: "right", lineColor: 17, lineWidth: { top: 0.8 } },
