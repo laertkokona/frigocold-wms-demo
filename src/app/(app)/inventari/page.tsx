@@ -19,11 +19,16 @@ type Row = { isReturn?: boolean; id: string; product: string; supplierId: string
 
 export default function Inventari() {
   const list = useBrowse<Row>("inventory", "expiry");
-  const { shipments, products, suppliers, clients } = useStore();
-  /** "Stoku aktual" PDF with every load in stock and its cost, from the stock as it is right now. */
+  /** "Stoku aktual" PDF with every load in stock and its cost. This page lists stock page by page from the server
+   *  and does not load all the data, so the full stock is fetched fresh at the moment of printing. */
   const printStock = async () => {
     const win = openReceiptWindow("Po përgatitet stoku…");
-    const ok = await showPdf(win, () => stockReportPdf({ shipments, products, suppliers, clients }), `Stoku-${fmtDate(todayInTirane()).replaceAll("/", "-")}.pdf`);
+    const ok = await showPdf(win, async () => {
+      await useStore.getState().load();
+      const { shipments, products, suppliers, clients, error } = useStore.getState();
+      if (error || !shipments.length) throw new Error(error ?? "Stoku nuk u ngarkua");
+      return stockReportPdf({ shipments, products, suppliers, clients });
+    }, `Stoku-${fmtDate(todayInTirane()).replaceAll("/", "-")}.pdf`);
     if (!ok) toast.error("PDF-ja e stokut nuk u krijua. Provo sërish.");
   };
   return <>
