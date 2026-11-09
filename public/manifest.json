@@ -1,0 +1,19 @@
+{
+  "name": "FrigoCold WMS",
+  "short_name": "FrigoCold",
+  "description": "Sistemi i menaxhimit të magazinës frigoriferike — Frigo ALBA",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#972e2b",
+  "theme_color": "#972e2b",
+  "lang": "sq",
+  "launch_handler": { "client_mode": "focus-existing" },
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
