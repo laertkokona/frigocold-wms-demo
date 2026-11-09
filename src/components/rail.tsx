@@ -25,7 +25,7 @@ export function Rail() {
   const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }); router.replace("/login"); router.refresh(); };
   return (
     <nav className="fixed inset-y-0 left-0 z-40 flex w-[72px] flex-col items-center border-r bg-card py-4 max-md:inset-x-0 max-md:bottom-0 max-md:top-auto max-md:h-16 max-md:w-full max-md:flex-row max-md:justify-around max-md:border-r-0 max-md:border-t max-md:py-0" aria-label="Navigimi kryesor">
-      <Link href="/dashboard" className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-entry text-entry-foreground max-md:hidden" aria-label="FrigoCold"><Snowflake className="h-5 w-5" /></Link>
+      <Link href="/dashboard" className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-brand-foreground max-md:hidden" aria-label="FrigoCold"><Snowflake className="h-5 w-5" /></Link>
       {items.map(it => {
         const active = path === it.href || path.startsWith(it.href + "/");
         const badge = it.href === "/alarmet" ? nav.data?.alerts ?? 0 : it.href === "/hyrje" ? nav.data?.drafts ?? 0 : 0;
@@ -34,14 +34,14 @@ export function Rail() {
             className={cn("relative mb-1 flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground max-md:mb-0 max-md:h-14",
               active && "tone" in it && it.tone === "entry" && "bg-entry/15 text-entry",
               active && "tone" in it && it.tone === "exit" && "bg-exit/15 text-exit",
-              active && !("tone" in it) && "bg-accent text-foreground")}>
+              active && !("tone" in it) && "bg-accent text-accent-foreground")}>
             <it.icon className="h-5 w-5" /><span className="text-[9px] leading-none">{it.label}</span>
             {badge > 0 && <span className={cn("absolute right-1 top-1 min-w-[16px] rounded-full px-1 text-center text-[9px] font-semibold leading-4 text-white", it.href === "/alarmet" ? "bg-danger" : "bg-warn")}>{badge}</span>}
           </Link>
         );
       })}
       <div className="mt-auto flex flex-col items-center gap-1 max-md:hidden">
-        <Link href="/cilesimet" className={cn("flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground", path.startsWith("/cilesimet") && "bg-accent text-foreground")}><Settings className="h-5 w-5" /><span className="text-[9px]">Cilësime</span></Link>
+        <Link href="/cilesimet" className={cn("flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground", path.startsWith("/cilesimet") && "bg-accent text-accent-foreground")}><Settings className="h-5 w-5" /><span className="text-[9px]">Cilësime</span></Link>
         <button onClick={logout} className="flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Dil"><LogOut className="h-5 w-5" /><span className="text-[9px]">Dil</span></button>
       </div>
     </nav>

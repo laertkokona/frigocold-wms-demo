@@ -1,6 +1,7 @@
 "use client";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-export function Segmented<T extends string>({ value, onChange, options, className }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; className?: string }) {
+export function Segmented<T extends string>({ value, onChange, options, className }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode }[]; className?: string }) {
   return (
     <div className={cn("flex rounded-md border bg-secondary p-1", className)} role="radiogroup">
       {options.map(o => (

@@ -7,7 +7,11 @@
     --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
-    /* Cold navy base — a frozen warehouse, not a void */
+    /* Frigo Alba red, on the logo in both looks */
+    --brand: 2 56% 38%;
+    --brand-foreground: 0 0% 100%;
+
+    /* Dark look (default) — cold navy base, a frozen warehouse, not a void */
     --background: 222 32% 8%;
     --foreground: 210 30% 94%;
     --card: 222 28% 11%;
@@ -41,8 +45,44 @@
     --danger: 0 72% 58%;
     --danger-soft: 0 60% 55%;
   }
+  /* Light look in the Frigo Alba colours: white and warm off-white with the company red. Chosen per device in Cilësimet. */
+  :root.light {
+    --background: 20 20% 97%;
+    --foreground: 0 12% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 12% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 12% 12%;
+    --primary: 2 56% 38%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 15 18% 94%;
+    --secondary-foreground: 0 12% 12%;
+    --muted: 15 18% 94%;
+    --muted-foreground: 0 6% 40%;
+    --accent: 2 45% 95%;
+    --accent-foreground: 2 56% 30%;
+    --destructive: 0 78% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 10 14% 87%;
+    --input: 10 14% 82%;
+    --ring: 2 56% 38%;
+    --radius: 0.75rem;
+
+    /* Entry = green, Exit = blue: kept apart from the brand red so they still read at a glance */
+    --entry: 155 70% 30%;
+    --entry-foreground: 0 0% 100%;
+    --entry-soft: 155 50% 38%;
+    --exit: 215 75% 45%;
+    --exit-foreground: 0 0% 100%;
+    --exit-soft: 215 55% 50%;
+    --warn: 32 95% 40%;
+    --warn-soft: 32 80% 45%;
+    --danger: 0 78% 46%;
+    --danger-soft: 0 60% 50%;
+  }
   * { @apply border-border; }
   html { color-scheme: dark; }
+  html.light { color-scheme: light; }
   body { @apply bg-background text-foreground antialiased; font-feature-settings: "tnum" 1, "cv11" 1; }
   input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   input[type=number] { -moz-appearance: textfield; }

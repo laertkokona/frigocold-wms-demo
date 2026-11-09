@@ -1,5 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Moon, Sun } from "lucide-react";
+import { Segmented } from "@/components/ui/segmented";
+import { currentTheme, setTheme, type Theme } from "@/lib/theme";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DecimalInput, Input } from "@/components/ui/input";
@@ -11,10 +14,15 @@ import { useStore } from "@/lib/store";
 export default function Cilesimet() {
   const { thresholds, setThresholds, products } = useStore();
   const [t, setT] = useState(thresholds);
+  const [theme, setThemeState] = useState<Theme>("dark");
+  useEffect(() => setThemeState(currentTheme()), []);
   return (
     <>
       <PageHeader title="Cilësimet" sub="Pragjet e alarmeve dhe të dhënat e demos" />
       <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="lg:col-span-2"><CardHeader><CardTitle>Pamja</CardTitle><CardDescription>Ngjyrat e sistemit në këtë pajisje. Çdo kompjuter, telefon ose tablet ruan zgjedhjen e vet.</CardDescription></CardHeader><CardContent>
+          <Segmented className="max-w-md" value={theme} onChange={v => { setTheme(v); setThemeState(v); }} options={[{ value: "dark", label: <span className="inline-flex items-center gap-1.5"><Moon className="h-4 w-4" /> E errët</span> }, { value: "light", label: <span className="inline-flex items-center gap-1.5"><Sun className="h-4 w-4" /> E çelët (Frigo Alba)</span> }]} />
+        </CardContent></Card>
         <Card><CardHeader><CardTitle>Alarmet</CardTitle><CardDescription>Kur të njoftohet magazina</CardDescription></CardHeader><CardContent className="space-y-3">
           <div><Label>Ditë para skadimit</Label><Input type="number" value={t.expiryDays} onChange={e => setT({ ...t, expiryDays: +e.target.value })} /></div>
           <div><Label>Kartona minimum për lot</Label><Input type="number" value={t.lowShipmentCount} onChange={e => setT({ ...t, lowShipmentCount: +e.target.value })} /></div>
