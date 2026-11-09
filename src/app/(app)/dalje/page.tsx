@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, Check, ChevronRight, Delete, Equal, FileText, Keyboard, Layers, Plus, Printer, Receipt, UserCheck, X } from "lucide-react";
 import { openReceiptWindow, receiptFor, printSale, showReceipt } from "@/lib/print-receipt";
+import { isAndroid, printInPage } from "@/lib/print-android";
 import type { ReceiptCopy } from "@/lib/receipt";
 import { Button } from "@/components/ui/button";
 import { DecimalInput, Input } from "@/components/ui/input";
@@ -114,8 +115,12 @@ export default function DaljePage() {
   const reprint = async (copies?: ReceiptCopy[]) => { if (doneSale && !(await printSale(doneSale, store, copies))) toast.error("Fatura nuk u krijua. Provo sërish."); };
   const reset = () => { requestId.current = null; setLines([]); setProduct(null); setShip(null); setWeights([]); setBuf(""); setClientId(""); setSaleDate(todayInTirane()); setDoneSale(null); setStep("order"); };
   const printWeights = () => {
-    const w = method === "PALLET" ? pallets.map(Number).filter(n => n > 0) : weights; const win = window.open("", "_blank"); if (!win) return;
-    win.document.write(`<html><head><title>Peshat — ${escapeHtml(product?.name ?? "")}</title><style>body{font-family:system-ui;padding:32px;color:#111}h1{font-size:18px;margin:0 0 4px}p{color:#555;margin:0 0 16px;font-size:13px}table{border-collapse:collapse;width:100%;max-width:420px}td{padding:6px 10px;border-bottom:1px solid #ddd;font-size:14px}td:last-child{text-align:right;font-variant-numeric:tabular-nums}tr.t td{font-weight:700;border-top:2px solid #111;border-bottom:0}</style></head><body><h1>${escapeHtml(product?.name ?? "")}</h1><p>Lot ${escapeHtml(ship ? lotOf(ship) : "")} · ${fmtDate(todayInTirane())} · FrigoCold WMS</p><table>${w.map((x, i) => `<tr><td>#${i + 1}</td><td>${fmtNum(x, 3)} kg</td></tr>`).join("")}<tr class="t"><td>Totali (${w.length})</td><td>${fmtNum(w.reduce((a, b) => a + b, 0), 3)} kg</td></tr></table><script>window.print()</script></body></html>`);
+    const w = method === "PALLET" ? pallets.map(Number).filter(n => n > 0) : weights;
+    const body = `<h1>${escapeHtml(product?.name ?? "")}</h1><p>Lot ${escapeHtml(ship ? lotOf(ship) : "")} · ${fmtDate(todayInTirane())} · FrigoCold WMS</p><table>${w.map((x, i) => `<tr><td>#${i + 1}</td><td>${fmtNum(x, 3)} kg</td></tr>`).join("")}<tr class="t"><td>Totali (${w.length})</td><td>${fmtNum(w.reduce((a, b) => a + b, 0), 3)} kg</td></tr></table>`;
+    // On Android (the warehouse tablet) printing happens from this page; a new tab cannot be filled when the system runs as an app.
+    if (isAndroid()) { void printInPage(`<div class="w">${body}</div>`, "#fc-print .w{font-family:system-ui;padding:15mm;color:#111}#fc-print h1{font-size:18px;margin:0 0 4px}#fc-print p{color:#555;margin:0 0 16px;font-size:13px}#fc-print table{border-collapse:collapse;width:100%;max-width:420px}#fc-print td{padding:6px 10px;border-bottom:1px solid #ddd;font-size:14px}#fc-print td:last-child{text-align:right;font-variant-numeric:tabular-nums}#fc-print tr.t td{font-weight:700;border-top:2px solid #111;border-bottom:0}"); return; }
+    const win = window.open("", "_blank"); if (!win) return;
+    win.document.write(`<html><head><title>Peshat — ${escapeHtml(product?.name ?? "")}</title><style>body{font-family:system-ui;padding:32px;color:#111}h1{font-size:18px;margin:0 0 4px}p{color:#555;margin:0 0 16px;font-size:13px}table{border-collapse:collapse;width:100%;max-width:420px}td{padding:6px 10px;border-bottom:1px solid #ddd;font-size:14px}td:last-child{text-align:right;font-variant-numeric:tabular-nums}tr.t td{font-weight:700;border-top:2px solid #111;border-bottom:0}</style></head><body>${body}<script>window.print()</script></body></html>`);
     win.document.close();
   };
   const today = todayInTirane();

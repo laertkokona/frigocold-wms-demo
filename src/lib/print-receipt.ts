@@ -2,7 +2,7 @@
 import { receiptPdf, type ReceiptCopy, type ReceiptData } from "./receipt";
 import { fmtDate } from "./utils";
 import type { jsPDF } from "jspdf";
-import { isAndroid, printPdfAsPages } from "./print-android";
+import { isAndroid, printPdfInPage } from "./print-android";
 import type { Client, Product, Sale, SaleLine, Shipment, Supplier } from "./types";
 
 export type ReceiptContext = { clients: Client[]; products: Product[]; shipments: Shipment[]; suppliers: Supplier[] };
@@ -25,22 +25,25 @@ export function receiptFor(sale: { date: string; clientId: string; lines: SaleLi
   };
 }
 
-/** Opens the print window right away (browsers only allow it during the click), so it can be filled once the sale is saved. */
+/** Opens the print window right away (browsers only allow it during the click), so it can be filled once the sale is saved.
+ *  Not on Android, where printing happens from the system's own page (see print-android.ts). */
 export function openReceiptWindow(message = "Po përgatitet fleta e porosisë…") {
+  if (isAndroid()) return null;
   const win = window.open("", "_blank");
   win?.document.write(`<p style="font-family:system-ui;padding:24px">${message}</p>`);
   return win;
 }
 
 /** Shows a PDF in the window opened for it, ready to print or save (the computer's PDF viewer opens the print
- *  dialog by itself). On Android tablets and phones the pages go straight to Android's print screen instead.
+ *  dialog by itself). On Android tablets and phones the pages go straight to Android's print screen instead,
+ *  printed from the system's own page.
  *  If the window was blocked, the PDF is downloaded instead. */
 export async function showPdf(win: Window | null, make: () => Promise<jsPDF>, filename: string) {
   try {
     const doc = await make();
-    if (isAndroid() && win && !win.closed) {
-      try { await printPdfAsPages(win, doc, filename.replace(/\.pdf$/, "")); return true; }
-      catch { /* Fall back to opening the PDF itself. */ }
+    if (isAndroid()) {
+      try { await printPdfInPage(doc); return true; }
+      catch { /* Fall back to downloading the PDF itself. */ }
     }
     doc.autoPrint();
     const url = URL.createObjectURL(doc.output("blob"));
