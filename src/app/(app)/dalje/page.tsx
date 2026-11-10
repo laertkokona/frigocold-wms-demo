@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, Check, ChevronRight, Delete, Equal, FileText, Keyboard, Layers, Plus, Printer, Receipt, UserCheck, X } from "lucide-react";
-import { openReceiptWindow, receiptFor, printSale, showReceipt } from "@/lib/print-receipt";
+import { openReceiptWindow, receiptFor, printSale, showPdf, showReceipt } from "@/lib/print-receipt";
+import { palletSheetPdf, type PalletWeights } from "@/lib/pallet-sheet";
 import { isAndroid, printInPage } from "@/lib/print-android";
 import type { ReceiptCopy } from "@/lib/receipt";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,10 @@ type Step = "order" | "product" | "shipment" | "method" | "fixed" | "format" | "
 const fade = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.18 } };
 const DEFAULT_SURPLUS_REASON = "Peshë më shumë se në sistem";
 const FORMATS = [{ i: 2, d: 2, ex: "24.55", type: "2455" }, { i: 2, d: 3, ex: "19.877", type: "19877" }, { i: 2, d: 1, ex: "20.4", type: "204" }, { i: 3, d: 2, ex: "118.40", type: "11840" }];
+/** The sale being entered is kept on this device until it is saved, so a reload or a closed tab on the warehouse
+ *  tablet does not lose 150 typed weights. Older than this, a leftover draft is dropped. */
+const DRAFT_KEY = "frigocold-dalje-draft-v1", DRAFT_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+const sumOf = (ws: number[]) => ws.reduce((a, b) => a + b, 0);
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 
 export default function DaljePage() {
@@ -35,6 +40,9 @@ export default function DaljePage() {
   const [method, setMethod] = useState<SaleMethod>("VARIABLE");
   const [fixedKg, setFixedKg] = useState(""); const [fixedN, setFixedN] = useState("");
   const [fmt, setFmt] = useState({ i: 2, d: 2 }); const [buf, setBuf] = useState(""); const [weights, setWeights] = useState<number[]>([]);
+  // Carton weights are entered pallet by pallet: each closed pallet keeps how many of the weights (in order) are on it;
+  // the weights after the closed pallets are the pallet being weighed now. The sale line still gets all the weights.
+  const [palletSizes, setPalletSizes] = useState<number[]>([]);
   const [pallets, setPallets] = useState<string[]>(["", "", ""]);
   // The pallet count is typed freely (it may be empty while editing); the weight rows follow it once it is a valid number.
   const [palletN, setPalletN] = useState("3");
@@ -67,6 +75,24 @@ export default function DaljePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, buf, fmt]);
   const wSum = weights.reduce((a, b) => a + b, 0);
+  const closedN = palletSizes.reduce((a, b) => a + b, 0), openWeights = weights.slice(closedN);
+  const closedPallets: PalletWeights[] = palletSizes.map((size, i) => { const start = palletSizes.slice(0, i).reduce((a, b) => a + b, 0); return { n: i + 1, weights: weights.slice(start, start + size) }; });
+  const allPallets: PalletWeights[] = openWeights.length ? [...closedPallets, { n: palletSizes.length + 1, weights: openWeights }] : closedPallets;
+  /** Two copies of each pallet's weight list (client + ours): product name, "Paleta N = X arka", the weights and the total. */
+  const printPallets = async (list: PalletWeights[], summary = false) => {
+    if (!product || !list.length) return;
+    const win = openReceiptWindow("Po përgatitet lista e peshave…");
+    const name = `Peshat-${product.name}-paleta-${list.map(p => p.n).join("-")}`.replace(/[^\p{L}\p{N}-]+/gu, "-");
+    if (!(await showPdf(win, () => palletSheetPdf(product.name, list, fmt.d, summary), `${name}.pdf`))) toast.error("Lista e peshave nuk u krijua. Provo sërish.");
+  };
+  const closePallet = () => {
+    if (!openWeights.length) return;
+    const pallet = { n: palletSizes.length + 1, weights: openWeights };
+    setPalletSizes(ps => [...ps, pallet.weights.length]); setBuf("");
+    void printPallets([pallet]);
+  };
+  /** Back to weighing the last closed pallet (only while the next one is still empty). */
+  const reopenLast = () => { if (!openWeights.length) setPalletSizes(ps => ps.slice(0, -1)); };
 
   // Surplus ("Tepricë"): what a line takes beyond what the load has left (after lines already in this order from the
   // same load) is allowed with a reason and recorded as surplus at no cost. Above 3% of the load it only warns.
@@ -113,7 +139,45 @@ export default function DaljePage() {
     finally { setSaving(false); }
   };
   const reprint = async (copies?: ReceiptCopy[]) => { if (doneSale && !(await printSale(doneSale, store, copies))) toast.error("Fatura nuk u krijua. Provo sërish."); };
-  const reset = () => { requestId.current = null; setLines([]); setProduct(null); setShip(null); setWeights([]); setBuf(""); setClientId(""); setSaleDate(todayInTirane()); setDoneSale(null); setStep("order"); };
+  const reset = () => { requestId.current = null; setLines([]); setProduct(null); setShip(null); setWeights([]); setPalletSizes([]); setBuf(""); setClientId(""); setSaleDate(todayInTirane()); setDoneSale(null); setStep("order"); };
+  // Keep the sale being entered on this device (see DRAFT_KEY): restored once the data has loaded, saved on every
+  // change, removed once the sale is saved or started over.
+  const [restored, setRestored] = useState(false);
+  useEffect(() => {
+    if (restored || !store.hydrated) return;
+    setRestored(true);
+    let d: Record<string, unknown> | null = null;
+    try { d = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "null"); } catch { d = null; }
+    if (!d || typeof d.savedAt !== "number" || Date.now() - d.savedAt > DRAFT_MAX_AGE_MS) { try { localStorage.removeItem(DRAFT_KEY); } catch { /* Storage off. */ } return; }
+    const prod = store.products.find(x => x.id === d.productId) ?? null, sh = store.shipments.find(x => x.id === d.shipId) ?? null;
+    const draftLines = (Array.isArray(d.lines) ? d.lines as SaleLine[] : []).filter(l => store.shipments.some(x => x.id === l.shipmentId));
+    const ws = Array.isArray(d.weights) ? (d.weights as unknown[]).filter((x): x is number => typeof x === "number" && x > 0) : [];
+    const sizes = Array.isArray(d.palletSizes) ? (d.palletSizes as unknown[]).filter((x): x is number => Number.isInteger(x) && (x as number) > 0) : [];
+    const inLine = ["method", "fixed", "format", "keypad", "pallet", "total", "price"].includes(d.step as string);
+    const nextStep = (inLine && (!prod || !sh)) ? "order" : (typeof d.step === "string" && d.step !== "done" ? d.step as Step : "order");
+    if (!draftLines.length && !ws.length && nextStep === "order") return;
+    setLines(draftLines); setProduct(prod); setShip(sh); setStep(nextStep);
+    if (typeof d.method === "string") setMethod(d.method as SaleMethod);
+    if (d.fmt && typeof d.fmt === "object") setFmt(d.fmt as { i: number; d: number });
+    setWeights(ws); setPalletSizes(sizes.reduce((a, b) => a + b, 0) <= ws.length ? sizes : []);
+    if (Array.isArray(d.pallets)) setPallets(d.pallets as string[]);
+    if (typeof d.palletN === "string") setPalletN(d.palletN);
+    for (const [k, set] of [["fixedKg", setFixedKg], ["fixedN", setFixedN], ["totN", setTotN], ["totKg", setTotKg], ["price", setPrice], ["surplusReason", setSurplusReason], ["clientId", setClientId]] as const) if (typeof d[k] === "string") set(d[k] as string);
+    if (typeof d.lineKg === "number") setLineKg(d.lineKg);
+    setLineQty(typeof d.lineQty === "number" ? d.lineQty : null);
+    setLineSurplus(d.lineSurplus === true);
+    // A sale left from another day is dated today; the date can still be changed before saving.
+    setSaleDate(typeof d.saleDate === "string" && d.saleDate === todayInTirane() ? d.saleDate : todayInTirane());
+    toast("U rikthye porosia e papërfunduar në këtë pajisje", { duration: 8000, action: { label: "Fillo nga e para", onClick: () => reset() } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.hydrated]);
+  useEffect(() => {
+    if (!restored) return;
+    try {
+      if (step === "done" || (step === "order" && !lines.length && !weights.length)) { localStorage.removeItem(DRAFT_KEY); return; }
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ savedAt: Date.now(), step, lines, productId: product?.id ?? null, shipId: ship?.id ?? null, method, fmt, weights, palletSizes, pallets, palletN, fixedKg, fixedN, totN, totKg, price, lineKg, lineQty, lineSurplus, surplusReason, clientId, saleDate }));
+    } catch { /* Private mode or storage full: the sale just isn't kept on the device. */ }
+  }, [restored, step, lines, product, ship, method, fmt, weights, palletSizes, pallets, palletN, fixedKg, fixedN, totN, totKg, price, lineKg, lineQty, lineSurplus, surplusReason, clientId, saleDate]);
   const printWeights = () => {
     const w = method === "PALLET" ? pallets.map(Number).filter(n => n > 0) : weights;
     const body = `<h1>${escapeHtml(product?.name ?? "")}</h1><p>Lot ${escapeHtml(ship ? lotOf(ship) : "")} · ${fmtDate(todayInTirane())} · FrigoCold WMS</p><table>${w.map((x, i) => `<tr><td>#${i + 1}</td><td>${fmtNum(x, 3)} kg</td></tr>`).join("")}<tr class="t"><td>Totali (${w.length})</td><td>${fmtNum(w.reduce((a, b) => a + b, 0), 3)} kg</td></tr></table>`;
@@ -186,7 +250,7 @@ export default function DaljePage() {
           <Banner className="mb-4">{wt === "FIXED" ? `Kjo ngarkesë ka peshë fikse (${ship.fixedKg} kg/karton).` : wt === "PALLET" ? "Kjo ngarkesë vjen mbi paleta." : "Kjo ngarkesë ka peshë të ndryshme për karton."} Zgjidh si do ta regjistrosh këtë shitje: {wt === "PALLET" ? "peshën e secilës paletë" : "peshën e secilit karton"} ose vetëm numrin dhe peshën totale.{ship.countActual == null ? ` Numri i ${wt === "PALLET" ? "paletave" : "kartonave"} në këtë ngarkesë nuk dihet, ndaj kontrollohen vetëm kg.` : ""}</Banner>
           <div className="max-w-xl space-y-3">
             {wt !== "PALLET" && <MethodCard icon={Equal} title="Peshë fikse për karton" desc="Të gjithë kartonët kanë të njëjtën peshë. Fut peshën një herë dhe numrin e kartonave — sistemi shumëzon." rec={wt === "FIXED"} onClick={() => { setMethod("FIXED"); setFixedKg(String(ship.fixedKg ?? "")); const rc = remainingCount(ship); setFixedN(rc == null ? "" : String(Math.min(40, rc))); setStep("fixed"); }} />}
-            {wt !== "PALLET" && <MethodCard icon={Keyboard} title="Peshë e ndryshme për karton" desc="Çdo karton ka peshë tjetër. Shkruaj peshat me tastierë të shpejtë — sistemi i mbledh vetë." rec={wt === "VARIABLE"} onClick={() => { setMethod("VARIABLE"); setWeights([]); setBuf(""); setStep("format"); }} />}
+            {wt !== "PALLET" && <MethodCard icon={Keyboard} title="Peshë e ndryshme për karton" desc="Çdo karton ka peshë tjetër. Shkruaj peshat me tastierë të shpejtë — sistemi i mbledh vetë." rec={wt === "VARIABLE"} onClick={() => { setMethod("VARIABLE"); setWeights([]); setPalletSizes([]); setBuf(""); setStep("format"); }} />}
             {wt === "PALLET" && <MethodCard icon={Layers} title="Peshë për secilën paletë" desc="Fut peshën e secilës paletë veç e veç." rec onClick={() => { setMethod("PALLET"); setPallets(["", "", ""]); setPalletN("3"); setStep("pallet"); }} />}
             <MethodCard icon={Receipt} title="Vetëm numri dhe pesha totale" desc={wt === "PALLET" ? "Fut numrin e paletave dhe peshën totale (p.sh. nga fatura) — pa peshat e secilës paletë." : "Fut numrin e kartonave dhe peshën totale (p.sh. nga fatura) — pa peshat e secilit karton."} onClick={() => { setMethod("TOTAL"); setTotN(""); setTotKg(""); setStep("total"); }} />
           </div>
@@ -234,13 +298,21 @@ export default function DaljePage() {
             </div>
             <div>
               <div className="rounded-lg bg-secondary p-3">
-                <div className="mb-2 flex justify-between text-xs"><span className="font-medium">Peshat</span><span className="text-muted-foreground">{weights.length} futur</span></div>
-                <div ref={gridRef} className="scroll-thin grid max-h-48 grid-cols-3 gap-1.5 overflow-y-auto">{weights.map((w, i) => <button key={i} onClick={() => setWeights(ws => ws.filter((_, j) => j !== i))} className="group rounded-md border bg-card px-1 py-1.5 text-center font-mono text-xs tabular hover:border-danger" title="Hiq"><span className="block text-[9px] text-muted-foreground group-hover:text-danger">#{i + 1}</span>{fmtNum(w, fmt.d)}</button>)}</div>
-                {weights.length === 0 && <p className="py-6 text-center text-xs text-muted-foreground">Asnjë peshë ende. Fillo të shkruash.</p>}
-                <div className="mt-3 border-t pt-3 tabular"><div className="flex justify-between text-xs"><span className="text-muted-foreground">Kartona</span><span>{weights.length}</span></div><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Totali</span><span className="text-2xl font-semibold text-exit">{fmtNum(wSum, 3)}</span></div></div>
+                {closedPallets.length > 0 && <div className="mb-3 space-y-1.5">{closedPallets.map((p, i) => <div key={p.n} className="flex items-center justify-between gap-2 rounded-md border bg-card px-2.5 py-1.5 text-xs">
+                  <span><span className="font-medium">Paleta {p.n}</span> · {p.weights.length} arka · <span className="tabular">{fmtNum(sumOf(p.weights), 3)} kg</span></span>
+                  <span className="flex gap-1">
+                    {i === closedPallets.length - 1 && !openWeights.length && <button onClick={reopenLast} className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground">Rihap</button>}
+                    <button onClick={() => void printPallets([p])} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={`Printo paletën ${p.n}`}><Printer className="h-3 w-3" /> Printo</button>
+                  </span>
+                </div>)}</div>}
+                <div className="mb-2 flex justify-between text-xs"><span className="font-medium">{closedPallets.length ? `Paleta ${closedPallets.length + 1}` : "Peshat"}</span><span className="text-muted-foreground">{openWeights.length} arka</span></div>
+                <div ref={gridRef} className="scroll-thin grid max-h-48 grid-cols-3 gap-1.5 overflow-y-auto">{openWeights.map((w, i) => <button key={closedN + i} onClick={() => setWeights(ws => ws.filter((_, j) => j !== closedN + i))} className="group rounded-md border bg-card px-1 py-1.5 text-center font-mono text-xs tabular hover:border-danger" title="Hiq"><span className="block text-[9px] text-muted-foreground group-hover:text-danger">#{i + 1}</span>{fmtNum(w, fmt.d)}</button>)}</div>
+                {openWeights.length === 0 && <p className="py-6 text-center text-xs text-muted-foreground">{closedPallets.length ? `Paleta ${closedPallets.length + 1}: shkruaj peshat e kartonave.` : "Asnjë peshë ende. Fillo të shkruash."}</p>}
+                <div className="mt-3 border-t pt-3 tabular"><div className="flex justify-between text-xs"><span className="text-muted-foreground">{closedPallets.length ? "Kartona (të gjitha paletat)" : "Kartona"}</span><span>{weights.length}</span></div><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">{closedPallets.length ? "Totali (të gjitha paletat)" : "Totali"}</span><span className="text-2xl font-semibold text-exit">{fmtNum(wSum, 3)}</span></div></div>
                 {(() => { const rc = remainingCount(ship), over = rc == null ? wSum > remainingKg(ship) + 0.0005 : weights.length > rc; return <div className={cn("mt-2 flex justify-between rounded-md px-3 py-2 text-xs", over ? "bg-warn/10 text-warn" : "bg-entry/10 text-entry")}><span>{over ? "Më shumë se stoku!" : rc == null ? "Kg në stok te ky lot" : "Në stok te ky lot"}</span><span className="tabular">{rc == null ? `${fmtNum(wSum, 3)} / ${fmtNum(remainingKg(ship), 3)} kg` : `${weights.length} / ${rc}`}</span></div>; })()}
               </div>
-              <Button variant="outline" size="sm" className="mt-2 w-full" disabled={!weights.length} onClick={printWeights}><FileText /> Gjenero PDF me peshat</Button>
+              <Button variant="outline" className="mt-2 w-full" disabled={!openWeights.length} onClick={closePallet}><Printer /> Mbyll paletën {closedPallets.length + 1} & printo</Button>
+              {closedPallets.length > 0 && <Button variant="ghost" size="sm" className="mt-1 w-full" onClick={() => void printPallets(allPallets, true)}><FileText /> Printo të gjitha paletat ({allPallets.length})</Button>}
               {surplusBox(ship, wSum, weights.length)}
               <Button variant="exit" size="lg" className="mt-2 w-full" disabled={!weights.length || blocked(ship, wSum, weights.length)} onClick={() => openPrice(wSum, weights.length)}>Përfundo peshat <ArrowRight /></Button>
             </div>
