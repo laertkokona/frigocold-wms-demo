@@ -26,19 +26,25 @@ export async function palletSheetPdf(product: string, pallets: PalletWeights[], 
     doc.text(doc.splitTextToSize(pdfText(product), W) as string[], L, 22);
     doc.setFontSize(18); doc.text(`Paleta ${p.n} = ${p.weights.length} arka`, L, 34);
     doc.setLineWidth(0.6); doc.line(L, 39, L + W, 39);
-    // Weights in numbered columns, filled top to bottom then left to right; rows shrink only for very full pallets.
-    const cols = p.weights.length > 120 ? 5 : 4, rows = Math.max(1, Math.ceil(p.weights.length / cols));
-    const top = 47, bottom = 262, rowH = Math.min(11, (bottom - top) / rows), colW = W / cols;
-    const size = Math.max(8, Math.min(15, rowH * 1.5));
+    // Weights in columns of 10 cartons (1–10, 11–20, …), 5 columns across; more than 50 cartons continue in a second
+    // block of columns underneath (51–60, …). Rows only get smaller for very full pallets (over 100 cartons).
+    const PER_COL = 10, COLS = 5, GAP = 8;
+    const cols = Math.max(1, Math.ceil(p.weights.length / PER_COL)), blocks = Math.ceil(cols / COLS);
+    const top = 47, bottom = 262, rowH = Math.min(9.5, (bottom - top - (blocks - 1) * GAP) / (blocks * PER_COL)), colW = W / COLS;
+    const size = Math.max(8, Math.min(14, rowH * 1.5));
     p.weights.forEach((w, i) => {
-      const c = Math.floor(i / rows), r = i % rows, x = L + c * colW, y = top + r * rowH;
+      const col = Math.floor(i / PER_COL), block = Math.floor(col / COLS), c = col % COLS, r = i % PER_COL;
+      const x = L + c * colW, y = top + block * (PER_COL * rowH + GAP) + r * rowH;
       doc.setFont("helvetica", "normal"); doc.setFontSize(size * 0.8); doc.setTextColor(90);
       doc.text(`${i + 1}.`, x + 9, y, { align: "right" });
       doc.setFontSize(size); doc.setTextColor(17);
-      doc.text(num(w), x + colW - 8, y, { align: "right" });
+      doc.text(num(w), x + colW - 6, y, { align: "right" });
     });
     doc.setLineWidth(0.15); doc.setDrawColor(170);
-    for (let c = 1; c < cols; c++) doc.line(L + c * colW, top - 5, L + c * colW, top + rows * rowH - rowH + 2);
+    for (let b = 0; b < blocks; b++) {
+      const y0 = top + b * (PER_COL * rowH + GAP), inBlock = Math.min(COLS, cols - b * COLS);
+      for (let c = 1; c < inBlock; c++) doc.line(L + c * colW, y0 - 5, L + c * colW, y0 + (PER_COL - 1) * rowH + 2);
+    }
     const total = round(p.weights.reduce((a, b) => a + b, 0), decimals);
     doc.setDrawColor(17); doc.setLineWidth(0.6); doc.rect(L, 268, W, 14);
     doc.setFont("helvetica", "bold"); doc.setFontSize(16);
