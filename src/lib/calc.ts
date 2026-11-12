@@ -49,6 +49,8 @@ export function flows(shipments: Shipment[], sales: Sale[], months: string[]) {
     m, label: monthLabel(m),
     inKg: shipments.filter(s => monthKey(s.entryDate) === m).reduce((a, s) => a + s.netKgActual, 0),
     outKg: sales.filter(s => !s.isReturn && monthKey(s.date) === m).reduce((a, s) => a + s.totalKg, 0),
+    /** Kg clients returned that month (positive); returns are stored as negative kg. */
+    returnsKg: -sales.filter(s => s.isReturn && monthKey(s.date) === m).reduce((a, s) => a + s.totalKg, 0),
     revenue: sales.filter(s => monthKey(s.date) === m).reduce((a, s) => a + s.totalValue, 0),
     cost: sumCosts(shipments.filter(s => monthKey(s.entryDate) === m).map(s => s.totalCost)),
   }));
