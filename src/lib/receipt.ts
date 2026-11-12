@@ -33,7 +33,8 @@ const num = (n: number, d: number) => pdfText(fmtNum(n, d));
 export async function receiptPdf(r: ReceiptData, copies: ReceiptCopy[] = ["accounting", "client"]): Promise<jsPDF> {
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-  const title = `Fletë porosi${r.number != null ? ` nr. ${r.number}` : ""} - ${r.client.name} - ${fmtDate(r.date)}`;
+  // The sheet's number stays in the system (Lëvizjet, search) but is not printed: the accountant doesn't want it on the sheet.
+  const title = `Fletë porosi - ${r.client.name} - ${fmtDate(r.date)}`;
   doc.setProperties({ title: pdfText(title) });
   const L = 12, W = 186, LW = 0.3;
   const rows = Math.max(ROWS, r.lines.length), rowH = Math.min(8.5, (ROWS * 8.5) / rows);
@@ -41,7 +42,7 @@ export async function receiptPdf(r: ReceiptData, copies: ReceiptCopy[] = ["accou
   copies.forEach((copy, page) => {
     if (page > 0) doc.addPage();
     doc.setDrawColor(17); doc.setLineWidth(LW); doc.setTextColor(17);
-    // Header: [KONTABILITETI | FLETË POROSI | Nr. / Datë]
+    // Header: [KONTABILITETI | FLETË POROSI | Datë]
     let y = 12;
     const h = 17;
     doc.rect(L, y, 52, h); doc.rect(L + 52, y, W - 104, h); doc.rect(L + W - 52, y, 52, h);
@@ -49,10 +50,10 @@ export async function receiptPdf(r: ReceiptData, copies: ReceiptCopy[] = ["accou
     if (copy === "accounting") { doc.setFontSize(11); doc.text("KONTABILITETI", L + 26, y + h / 2 + 1.5, { align: "center" }); }
     doc.setFontSize(16); doc.text(pdfText("FLETË POROSI"), L + W / 2, y + h / 2 + 2, { align: "center" });
     doc.setFontSize(10.5);
-    doc.text("Nr.", L + W - 49, y + 6.5); doc.text(pdfText("Datë:"), L + W - 49, y + 13);
+    doc.text(pdfText("Datë:"), L + W - 49, y + h / 2 + 1.5);
     doc.setFont("helvetica", "normal");
-    doc.text(r.number != null ? String(r.number) : "", L + W - 36, y + 6.5); doc.text(fmtDate(r.date), L + W - 36, y + 13);
-    doc.setLineWidth(0.2); doc.line(L + W - 37, y + 7.5, L + W - 4, y + 7.5); doc.line(L + W - 37, y + 14, L + W - 4, y + 14); doc.setLineWidth(LW);
+    doc.text(fmtDate(r.date), L + W - 36, y + h / 2 + 1.5);
+    doc.setLineWidth(0.2); doc.line(L + W - 37, y + h / 2 + 2.5, L + W - 4, y + h / 2 + 2.5); doc.setLineWidth(LW);
     // Buyer
     y += h + 4;
     const buyer: [string, string][] = [[pdfText("BLERËSI"), pdfText(r.client.name + (r.client.city ? ` · ${r.client.city}` : ""))], ["Nr. Telefoni / NIPT", pdfText(r.client.phone ?? "")]];

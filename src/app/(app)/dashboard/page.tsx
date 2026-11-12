@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { ArrowDownRight, ArrowUpRight, Crown, PackageMinus, PackagePlus, TrendingUp, UserX, Zap } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, ChevronRight, Crown, PackageMinus, PackagePlus, TrendingUp, UserX, Zap } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,8 +22,9 @@ export default function Dashboard() {
   return (
     <>
       <PageHeader title="Paneli kryesor" sub={`${fmtDate(todayInTirane())} · Frigo ALBA, Kashar`} right={<div className="flex gap-2"><Button asChild variant="entry"><Link href="/hyrje"><PackagePlus /> Hyrje e re</Link></Button><Button asChild variant="exit"><Link href="/dalje"><PackageMinus /> Porosi shitjeje</Link></Button></div>} />
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Stat label="Stoku total" value={fmtKg(totalKg, 0)} sub={totalVal == null ? `${fmtLek(report.data.knownStockValue)} me kosto të njohur · ${fmtKg(report.data.missingStockCostKg, 0)} pa kosto` : `vlerë kostoje ${fmtLek(totalVal)}`} />
+        <Stat label="Kg të shitura këtë muaj" value={fmtKg(cur.outKg, 0)} sub={<Delta a={cur.outKg} b={prev.outKg} />} href="/kontabiliteti?tab=month" />
         <Stat label="Të ardhura këtë muaj" value={fmtLek(revenueMonth)} sub={<Delta a={cur.revenue} b={prev.revenue} />} />
         <Stat label="Fitimi bruto këtë muaj" value={profitMonth == null ? "I paplotë" : fmtLek(profitMonth)} sub={profitMonth == null ? `${fmtKg(report.data.missingMonthCostKg, 0)} të shitura pa kosto` : revenueMonth ? `marzh ${((profitMonth / revenueMonth) * 100).toFixed(1)}%` : "—"} tone="entry" />
         <Stat label="Rrezik skadimi" value={fmtKg(riskKg, 0)} sub={riskVal == null ? `${fmtLek(report.data.knownRiskValue)} kosto e njohur · ${fmtKg(report.data.missingRiskCostKg, 0)} pa kosto` : `${fmtLek(riskVal)} kosto e ekspozuar`} tone={riskKg > 0 ? "danger" : undefined} />
@@ -107,8 +108,9 @@ export default function Dashboard() {
   );
 }
 
-function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: React.ReactNode; tone?: "entry" | "danger" | "warn" }) {
-  return <div className="rounded-lg bg-card p-4"><div className="text-[11px] text-muted-foreground">{label}</div><div className={cn("mt-1 text-xl font-semibold tabular", tone === "entry" && "text-entry", tone === "danger" && "text-danger", tone === "warn" && "text-warn")}>{value}</div>{sub && <div className="mt-1 text-[11px] text-muted-foreground">{sub}</div>}</div>;
+function Stat({ label, value, sub, tone, href }: { label: string; value: string; sub?: React.ReactNode; tone?: "entry" | "danger" | "warn"; href?: string }) {
+  const body = <><div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">{label}{href && <ChevronRight className="h-3.5 w-3.5" />}</div><div className={cn("mt-1 text-xl font-semibold tabular", tone === "entry" && "text-entry", tone === "danger" && "text-danger", tone === "warn" && "text-warn")}>{value}</div>{sub && <div className="mt-1 text-[11px] text-muted-foreground">{sub}</div>}</>;
+  return href ? <Link href={href} className="block rounded-lg bg-card p-4 transition-colors hover:bg-accent/40">{body}</Link> : <div className="rounded-lg bg-card p-4">{body}</div>;
 }
 function Delta({ a, b, small }: { a: number; b: number; small?: boolean }) {
   if (!b && !a) return <span className="text-muted-foreground">—</span>;

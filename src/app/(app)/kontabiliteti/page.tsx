@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, ChevronDown, ChevronRight, Download, Info } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,13 @@ export default function Kontabiliteti() {
   const [pk, setPk] = useState<PeriodKey>("month");
   const [priceProd, setPriceProd] = useState("");
   const [lotPage, setLotPage] = useState(1);
+  // "?tab=month" (from the Paneli card "Kg të shitura këtë muaj") opens that tab and scrolls to its table.
+  const [tab, setTab] = useState("ov");
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t && ["ov", "month", "prod", "price", "cli", "sup", "lot"].includes(t)) setTab(t);
+  }, []);
+  useEffect(() => { if (tab === "month" && window.location.search.includes("tab=month")) window.setTimeout(() => document.getElementById("kg-sipas-muajve")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }, [tab]);
   const report = useServerReport<AccountingReport>(`/api/accounting?period=${pk}&product=${priceProd}&lotPage=${lotPage}`);
   if (!report.data) return <div className="rounded-lg border p-6">{report.error ? <>Raporti nuk u ngarkua. <button className="underline" onClick={report.refresh}>Provo sërish</button></> : "Po ngarkohet…"}</div>;
   const { p, cur, prev, series, prods, clis, sups, lots, risk, thresholds, products, pSeries, disp, activeLotCount, realizedProfit, lotsTotal, lotPageSize } = report.data;
@@ -58,7 +65,7 @@ export default function Kontabiliteti() {
         <Kpi label="Stok në magazinë (kosto)" value={fmtLek(cur.inventoryValue)} sub={risk.kg > 0 ? `${fmtLek(risk.value)} në rrezik skadimi` : "pa rrezik skadimi"} tone={risk.kg > 0 ? "warn" : undefined} />
       </div>
 
-      <Tabs defaultValue="ov">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="max-w-full overflow-x-auto">
           <TabsTrigger value="ov">Përmbledhje</TabsTrigger><TabsTrigger value="month">Sipas muajve</TabsTrigger><TabsTrigger value="prod">Produktet</TabsTrigger>
           <TabsTrigger value="price">Çmimet</TabsTrigger><TabsTrigger value="cli">Klientët</TabsTrigger>
@@ -300,7 +307,7 @@ function MonthsTab({ rows }: { rows: MonthSalesRow[] }) {
     a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }));
     a.download = "kg-sipas-muajve.csv"; a.click();
   };
-  return <Card><CardHeader className="flex-row items-start justify-between gap-3 space-y-0"><div><CardTitle>Kg të shitura sipas muajve</CardTitle><CardDescription>Të gjithë muajt, pavarësisht periudhës së zgjedhur · kliko një muaj për ndarjen sipas produkteve</CardDescription></div><Button variant="outline" size="sm" disabled={!rows.length} onClick={exportCsv}><Download /> CSV</Button></CardHeader><CardContent className="px-0">
+  return <Card id="kg-sipas-muajve" className="scroll-mt-4"><CardHeader className="flex-row items-start justify-between gap-3 space-y-0"><div><CardTitle>Kg të shitura sipas muajve</CardTitle><CardDescription>Të gjithë muajt, pavarësisht periudhës së zgjedhur · kliko një muaj për ndarjen sipas produkteve</CardDescription></div><Button variant="outline" size="sm" disabled={!rows.length} onClick={exportCsv}><Download /> CSV</Button></CardHeader><CardContent className="px-0">
     <div className="overflow-x-auto"><table className="w-full text-sm">
       <thead><tr className="border-b text-left text-[11px] text-muted-foreground"><Th>Muaji</Th><Th right>Porosi</Th><Th right>Kg shitur</Th><Th right>Kg kthyer</Th><Th right>Të ardhura (neto)</Th><Th right>Fitim bruto</Th><Th right>Marzh</Th></tr></thead>
       <tbody>{rows.map(r => { const isOpen = open === r.m; return <Fragment key={r.m}>
