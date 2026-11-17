@@ -30,7 +30,8 @@ function summary(r: Row) {
 }
 
 export default function Levizjet() {
-  const list = useBrowse<Row>("movements", "date", "desc");
+  // Newest first by when it was entered: the last sale or entry made is on top (sales thus follow the order-sheet numbers).
+  const list = useBrowse<Row>("movements", "created", "desc");
   const [open, setOpen] = useState<string | null>(null);
   const exportPage = () => {
     const csv = ["Data,Lloji,Pala,Porosia,Produkti,Lot,Sasia,Kg,Çmimi/kg,Vlera (Lek),Shënim", ...list.items.flatMap(r => r.lines.map(l => [fmtDate(r.date), TYPE_LABEL[r.type], r.party ?? "", r.ref ?? "", l.product, l.lot, l.qty ?? "", Number(l.kg).toFixed(3), l.price == null ? "" : Number(l.price).toFixed(2), l.value == null ? "" : Math.round(l.value), l.method].map(csvCell).join(",")))].join("\n");
@@ -68,6 +69,6 @@ export default function Levizjet() {
       </Fragment>; })}</tbody></table>
       {!list.loading && !list.items.length && <p className="p-6 text-center text-sm text-muted-foreground">Asnjë lëvizje me këto filtra.</p>}
     </div>
-    <BrowseControls {...list} sorts={[{ value: "date", label: "Data" }, { value: "kg", label: "Kg" }, { value: "value", label: "Vlera" }]} />
+    <BrowseControls {...list} sorts={[{ value: "created", label: "Më të fundit" }, { value: "date", label: "Data" }, { value: "kg", label: "Kg" }, { value: "value", label: "Vlera" }]} />
   </>;
 }

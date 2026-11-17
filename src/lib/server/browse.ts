@@ -8,7 +8,7 @@ const sorts: Record<BrowseKind, Record<string, string>> = {
   clients: { name: 'name', orders: 'orders', kg: 'kg', value: 'value', last: 'last' },
   suppliers: { name: 'name', shipments: 'shipments', kg: 'kg', spend: 'spend', stock: 'stock', last: 'last' },
   inventory: { expiry: 'expiry', product: 'product', kg: 'remaining_kg', entry: 'entry_date' },
-  movements: { date: 'date', kg: 'kg', value: 'value' },
+  movements: { created: 'created', date: 'date', kg: 'kg', value: 'value' },
   search: { date: 'date', title: 'title' },
 };
 
@@ -71,6 +71,9 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         CASE WHEN COUNT(g.qty) = COUNT(*) THEN SUM(g.qty)::int END AS qty, SUM(g.kg) AS kg,
         CASE WHEN COUNT(g.value) = COUNT(*) THEN SUM(g.value) END AS value,
         STRING_AGG(DISTINCT g.product, ', ') AS products, MAX(g.ref) AS ref, MIN(g.method) AS method,
+        -- When the order was entered (for a cancelled sale: when it was cancelled; a surplus goes with its sale):
+        -- the default order, newest first.
+        MAX(g.created) AS created,
         JSON_AGG(JSON_BUILD_OBJECT('id', g.id, 'sid', g.sid, 'product', g.product, 'lot', g.lot, 'qty', g.qty, 'kg', g.kg, 'price', g.price, 'value', g.value, 'method', g.method) ORDER BY g.product, g.kg DESC) AS lines
       FROM (
         -- A truck (same day, supplier and order number) is one entry; loads without a supplier stay on their own.
@@ -79,7 +82,8 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
           COALESCE(l.lots, '') AS lot, COALESCE(rc.name, su.name) AS party, sh.count_actual AS qty,
           COALESCE(im.kg, sh.net_kg_actual) AS kg, COALESCE(im.kg, sh.net_kg_actual) * sh.cost_per_kg AS value,
           CASE WHEN sh.return_of_line_id IS NOT NULL THEN CONCAT('kthim: ', sh.return_reason)
-            WHEN sh.order_nr IS NULL THEN 'Pa nr. porosie' ELSE CONCAT('Porosia ', sh.order_nr) END AS method
+            WHEN sh.order_nr IS NULL THEN 'Pa nr. porosie' ELSE CONCAT('Porosia ', sh.order_nr) END AS method,
+          sh.created_at AS created
         FROM shipments sh JOIN products p ON p.id = sh.product_id
         LEFT JOIN suppliers su ON su.id = sh.supplier_id
         LEFT JOIN sale_lines rl ON rl.id = sh.return_of_line_id LEFT JOIN sales rs ON rs.id = rl.sale_id LEFT JOIN clients rc ON rc.id = rs.client_id
@@ -90,7 +94,8 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         UNION ALL
         SELECT sl.id, sa.id::text, sl.shipment_id, sl.price_per_kg, sa.receipt_nr::varchar, sa.date, 'OUT'::text, p.name, COALESCE(l.lots, ''), c.name,
           sl.qty, sl.kg, sl.kg * sl.price_per_kg,
-          CASE sl.method WHEN 'FIXED' THEN 'peshë fikse' WHEN 'VARIABLE' THEN 'peshë e ndryshme' WHEN 'TOTAL' THEN 'peshë totale' ELSE 'paleta' END
+          CASE sl.method WHEN 'FIXED' THEN 'peshë fikse' WHEN 'VARIABLE' THEN 'peshë e ndryshme' WHEN 'TOTAL' THEN 'peshë totale' ELSE 'paleta' END,
+          sa.created_at
         FROM sale_lines sl JOIN sales sa ON sa.id = sl.sale_id
         JOIN shipments sh ON sh.id = sl.shipment_id JOIN products p ON p.id = sh.product_id
         JOIN clients c ON c.id = sa.client_id
@@ -99,7 +104,8 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         UNION ALL
         SELECT sl.id, sa.id::text, sl.shipment_id, sl.price_per_kg, sa.receipt_nr::varchar, sa.date, 'ANUL'::text, p.name, COALESCE(l.lots, ''), c.name,
           sl.qty, sl.kg, sl.kg * sl.price_per_kg,
-          CONCAT('shitje e anuluar më ', TO_CHAR((sa.cancelled_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Tirane', 'DD/MM/YYYY'), ' — ', sa.cancel_reason)
+          CONCAT('shitje e anuluar më ', TO_CHAR((sa.cancelled_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Tirane', 'DD/MM/YYYY'), ' — ', sa.cancel_reason),
+          sa.cancelled_at
         FROM sale_lines sl JOIN sales sa ON sa.id = sl.sale_id
         JOIN shipments sh ON sh.id = sl.shipment_id JOIN products p ON p.id = sh.product_id
         JOIN clients c ON c.id = sa.client_id
@@ -108,7 +114,8 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
         UNION ALL
         SELECT k.id, k.id::text, k.shipment_id, sh.cost_per_kg, NULL::varchar, k.date, 'KOR'::text, p.name, COALESCE(l.lots, ''), su.name,
           NULL::int, k.kg_after - k.kg_before, (k.kg_after - k.kg_before) * sh.cost_per_kg,
-          CONCAT('korrigjim i kg: ', TRIM(TO_CHAR(k.kg_before, 'FM999999990.999'), '.'), ' → ', TRIM(TO_CHAR(k.kg_after, 'FM999999990.999'), '.'), ' kg — ', k.note)
+          CONCAT('korrigjim i kg: ', TRIM(TO_CHAR(k.kg_before, 'FM999999990.999'), '.'), ' → ', TRIM(TO_CHAR(k.kg_after, 'FM999999990.999'), '.'), ' kg — ', k.note),
+          k.created_at
         FROM shipment_corrections k JOIN shipments sh ON sh.id = k.shipment_id JOIN products p ON p.id = sh.product_id
         LEFT JOIN suppliers su ON su.id = sh.supplier_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
@@ -118,14 +125,15 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
           a.qty, a.kg, a.kg * sh.cost_per_kg,
           CONCAT('mungesë: ', CASE a.reason WHEN 'SUPPLIER' THEN 'furnizuesi ngarkoi më pak' WHEN 'COUNT' THEN 'gabim në numërim'
             WHEN 'UNRECORDED_SALE' THEN 'shitje e paregjistruar' WHEN 'DAMAGED' THEN 'i dëmtuar / i prishur' ELSE 'tjetër' END,
-            CASE WHEN a.note IS NULL THEN '' ELSE CONCAT(' — ', a.note) END)
+            CASE WHEN a.note IS NULL THEN '' ELSE CONCAT(' — ', a.note) END),
+          a.created_at
         FROM stock_adjustments a JOIN shipments sh ON sh.id = a.shipment_id JOIN products p ON p.id = sh.product_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
         WHERE sh.cancelled_at IS NULL
         UNION ALL
         -- Surplus ("Tepricë") taken by a sale beyond the recorded stock, with the sale's client and order sheet number.
         SELECT x.id, x.id::text, x.shipment_id, sh.cost_per_kg, sa.receipt_nr::varchar, x.date, 'TEP'::text, p.name, COALESCE(l.lots, ''), c.name,
-          x.qty, x.kg, x.kg * sh.cost_per_kg, CONCAT('tepricë: ', x.reason)
+          x.qty, x.kg, x.kg * sh.cost_per_kg, CONCAT('tepricë: ', x.reason), sa.created_at
         FROM stock_surpluses x JOIN shipments sh ON sh.id = x.shipment_id JOIN products p ON p.id = sh.product_id
         JOIN sales sa ON sa.id = x.sale_id JOIN clients c ON c.id = sa.client_id
         LEFT JOIN (SELECT shipment_id, STRING_AGG(lot_number, ', ' ORDER BY lot_number) AS lots FROM shipment_lots GROUP BY shipment_id) l ON l.shipment_id = sh.id
@@ -161,6 +169,10 @@ function baseQuery(p: BrowseParams): Prisma.Sql {
   }
 }
 
+/** Order for rows that tie on the chosen sort: movements entered together (a sale and its surplus, a truck's
+ *  loads entered at once) go newest date first, and a sale before its surplus row (OUT before TEP). */
+const tiebreak: Partial<Record<BrowseKind, string>> = { movements: "date DESC, type ASC," };
+
 export async function browse(p: BrowseParams) {
   if (p.kind === "search" && !p.q.trim()) return { items: [], total: 0, page: p.page, pageSize: p.pageSize };
   const base = baseQuery(p);
@@ -169,7 +181,7 @@ export async function browse(p: BrowseParams) {
   const offset = (p.page - 1) * p.pageSize;
   const [counts, items] = await Promise.all([
     getDb().$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT COUNT(*) AS total FROM (${base}) q`),
-    getDb().$queryRaw<Record<string, unknown>[]>(Prisma.sql`SELECT * FROM (${base}) q ORDER BY ${Prisma.raw(sort)} ${Prisma.raw(direction)} NULLS LAST, id ASC LIMIT ${p.pageSize} OFFSET ${offset}`),
+    getDb().$queryRaw<Record<string, unknown>[]>(Prisma.sql`SELECT * FROM (${base}) q ORDER BY ${Prisma.raw(sort)} ${Prisma.raw(direction)} NULLS LAST, ${Prisma.raw(tiebreak[p.kind] ?? "")} id ASC LIMIT ${p.pageSize} OFFSET ${offset}`),
   ]);
   return { items: items.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, typeof value === "bigint" || value instanceof Prisma.Decimal ? Number(value) : value]))), total: Number(counts[0]?.total ?? 0), page: p.page, pageSize: p.pageSize };
 }
