@@ -48,7 +48,9 @@ export async function receiptPdf(r: ReceiptData, copies: ReceiptCopy[] = ["accou
     doc.rect(L, y, 52, h); doc.rect(L + 52, y, W - 104, h); doc.rect(L + W - 52, y, 52, h);
     doc.setFont("helvetica", "bold");
     if (copy === "accounting") { doc.setFontSize(11); doc.text("KONTABILITETI", L + 26, y + h / 2 + 1.5, { align: "center" }); }
-    doc.setFontSize(16); doc.text(pdfText("FLETË POROSI"), L + W / 2, y + h / 2 + 2, { align: "center" });
+    // Title with the company name in smaller type underneath, both inside the same middle box.
+    doc.setFontSize(16); doc.text(pdfText("FLETË POROSI"), L + W / 2, y + 8.3, { align: "center" });
+    doc.setFontSize(10); doc.text("FRIGOALBA", L + W / 2, y + 13.8, { align: "center" });
     doc.setFontSize(10.5);
     doc.text(pdfText("Datë:"), L + W - 49, y + h / 2 + 1.5);
     doc.setFont("helvetica", "normal");
