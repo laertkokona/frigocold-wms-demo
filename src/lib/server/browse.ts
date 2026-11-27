@@ -8,7 +8,9 @@ const sorts: Record<BrowseKind, Record<string, string>> = {
   clients: { name: 'name', orders: 'orders', kg: 'kg', value: 'value', last: 'last' },
   suppliers: { name: 'name', shipments: 'shipments', kg: 'kg', spend: 'spend', stock: 'stock', last: 'last' },
   inventory: { expiry: 'expiry', product: 'product', kg: 'remaining_kg', entry: 'entry_date' },
-  movements: { created: 'created', date: 'date', kg: 'kg', value: 'value' },
+  // "Më të fundit": by date, then newest entered first within the same day, so a load entered late with an
+  // earlier date sits on its own day instead of on top. {dir} is the chosen direction.
+  movements: { created: 'date {dir} NULLS LAST, created', date: 'date', kg: 'kg', value: 'value' },
   search: { date: 'date', title: 'title' },
 };
 
@@ -176,8 +178,8 @@ const tiebreak: Partial<Record<BrowseKind, string>> = { movements: "date DESC, t
 export async function browse(p: BrowseParams) {
   if (p.kind === "search" && !p.q.trim()) return { items: [], total: 0, page: p.page, pageSize: p.pageSize };
   const base = baseQuery(p);
-  const sort = sorts[p.kind][p.sort] ?? Object.values(sorts[p.kind])[0];
   const direction = p.direction === "asc" ? "ASC" : "DESC";
+  const sort = (sorts[p.kind][p.sort] ?? Object.values(sorts[p.kind])[0]).replaceAll("{dir}", direction);
   const offset = (p.page - 1) * p.pageSize;
   const [counts, items] = await Promise.all([
     getDb().$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT COUNT(*) AS total FROM (${base}) q`),
